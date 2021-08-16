@@ -469,7 +469,7 @@ function quantifyLoss(D, suffix, img)
     println(size(red))
     println(size(green))
     rgbImg = RGB.(red, green, blue)'
-    # save("loss_$(suffix).png", rgbImg)
+    save("loss_$(suffix).png", map(clamp01nan, rgbImg))
 
     # println("Saving output image:")
     # println(typeof(img))
@@ -507,7 +507,7 @@ function oneIteration(meshy, img, suffix)
         end
     end
 
-    # saveObj(matrix_to_mesh(ϕ * .1), "phi_$(suffix).obj")
+    saveObj(matrix_to_mesh(ϕ * .02), "phi_$(suffix).obj")
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
@@ -817,7 +817,8 @@ end
 
 function main()
     # img = Gray.(load("cat.jpg"))
-    img = Gray.(load("necco2.jpg"))
+    # img = Gray.(load("necco2.jpg"))
+    img = Gray.(load("cat_posing.jpg"))
     img2 = permutedims(img) * 1.0
     width, height = size(img2)
 
