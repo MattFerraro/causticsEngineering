@@ -469,7 +469,7 @@ function quantifyLoss(D, suffix, img)
     println(size(red))
     println(size(green))
     rgbImg = RGB.(red, green, blue)'
-    save("loss_$(suffix).png", rgbImg)
+    # save("loss_$(suffix).png", rgbImg)
 
     # println("Saving output image:")
     # println(typeof(img))
@@ -483,11 +483,11 @@ function oneIteration(meshy, img, suffix)
     # remember meshy is 512x512 just like the image 512x512
     # so LJ is 512x512
     LJ = getPixelArea(meshy)
-    D = LJ - img
-
+    D = Float64.(LJ - img)
+    
     # Save the loss image as a png
-    # println(minimum(D))
-    # println(maximum(D))
+    println(minimum(D))
+    println(maximum(D))
     quantifyLoss(D, suffix, img)
     # save("loss_$(suffix).png", colorview(Gray, D))
     # return
@@ -817,20 +817,18 @@ end
 
 function main()
     # img = Gray.(load("cat.jpg"))
-    img = Gray.(load("lenna.png"))
+    img = Gray.(load("necco2.jpg"))
     img2 = permutedims(img) * 1.0
     width, height = size(img2)
 
     # meshy is the same size as the image
     meshy = squareMesh(width + 1, height + 1)
-
     # We need to boost the brightness of the image so that its sum and the sum of the area are equal
     mesh_sum = width * height
     image_sum = sum(img2)
     boost_ratio = mesh_sum / image_sum
     # img3 is 512x512
-    img3 = img2 * boost_ratio
-
+    img3 = img2 .* boost_ratio    
     oneIteration(meshy, img3, "it1")
     oneIteration(meshy, img3, "it2")
     oneIteration(meshy, img3, "it3")
