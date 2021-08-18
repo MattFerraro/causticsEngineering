@@ -1,6 +1,6 @@
 using Images
-using Plots
-gr()
+# using Plots
+# gr()
 
 # This implements the method of caustics control described in this paper:
 # https://www.researchgate.net/profile/Yonghao_Yue/publication/274483217_Poisson-Based_Continuous_Surface_Generation_for_Goal-Based_Caustics/links/575b4ceb08ae414b8e467a5f.pdf
@@ -925,9 +925,12 @@ function plotVAsQuiver(vx, vy; stride=4, scale=300, max_length=2,)
 end
 
 function main()
-    # img = Gray.(load("cat.jpg"))
-    # img = Gray.(load("necco2.jpg"))
-    img = Gray.(load("cat_posing.jpg"))
+    if size(ARGS) != (1,)
+        println("Intented usage is: julia create_mesh.jl image.png")
+        return
+    end
+
+    img = Gray.(load(ARGS[1]))
     img2 = permutedims(img) * 1.0
     width, height = size(img2)
 
@@ -944,8 +947,6 @@ function main()
     oneIteration(meshy, img3, "it2")
     oneIteration(meshy, img3, "it3")
     
-    return
-
     # oneIteration(meshy, img3, "it4")
     # oneIteration(meshy, img3, "it5")
     # oneIteration(meshy, img3, "it6")
@@ -958,7 +959,7 @@ function main()
     # newMesh = setHeights(meshy, h)
 
     solidMesh = solidify(meshy)
-    saveObj(solidMesh, "final_scripted.obj", scale=1/512.0 * artifactSize, scalez=1/512.0 * artifactSize)
+    saveObj(solidMesh, "$(ARGS[1]).obj", scale=1/512.0 * artifactSize, scalez=1/512.0 * artifactSize)
     meshy, img3
 end
 
