@@ -1,5 +1,6 @@
 using Images
-
+using Plots
+gr()
 
 # This implements the method of caustics control described in this paper:
 # https://www.researchgate.net/profile/Yonghao_Yue/publication/274483217_Poisson-Based_Continuous_Surface_Generation_for_Goal-Based_Caustics/links/575b4ceb08ae414b8e467a5f.pdf
@@ -135,15 +136,23 @@ function triangle_area(p1::Point3D, p2::Point3D, p3::Point3D)
 end
 
 
-function saveObj(mesh::Mesh, filename::String, scale=1.0, scalez=1.0)
+function saveObj(mesh::Mesh, filename::String; scale=1.0, scalez=1.0, reverse=false, flipxy=false)
   # This function saves the mesh object in stl format
     open(filename, "w") do io
         for vertex in mesh.nodes
-            println(io, "v ", vertex.x * scale, " ", vertex.y * scale, " ", vertex.z * scalez)
+            if flipxy
+                println(io, "v ", vertex.y * scale, " ", vertex.x * scale, " ", vertex.z * scalez)
+            else
+                println(io, "v ", vertex.x * scale, " ", vertex.y * scale, " ", vertex.z * scalez)
+            end
         end
 
         for face in mesh.triangles
-            println(io, "f ", face.pt1, " ", face.pt2, " ", face.pt3)
+            if reverse
+                println(io, "f ", face.pt3, " ", face.pt2, " ", face.pt1)
+            else
+                println(io, "f ", face.pt1, " ", face.pt2, " ", face.pt3)
+            end
         end
 
         println(io, "dims ", mesh.width, " ", mesh.height)
@@ -489,6 +498,12 @@ function oneIteration(meshy, img, suffix)
     println(minimum(D))
     println(maximum(D))
     quantifyLoss(D, suffix, img)
+
+    # ∇Lᵤ, ∇Lᵥ = ∇(D)
+    # plotVAsQuiver(∇Lᵤ, ∇Lᵥ, stride=10, scale=10, max_length=200)
+    # println("okay")
+    # return
+
     # save("loss_$(suffix).png", colorview(Gray, D))
     # return
     width, height = size(img)
@@ -507,11 +522,13 @@ function oneIteration(meshy, img, suffix)
         end
     end
 
-    saveObj(matrix_to_mesh(ϕ * .02), "phi_$(suffix).obj")
+    saveObj(matrix_to_mesh(ϕ * .02), "phi_$(suffix).obj", reverse=false, flipxy=true)
+    # plotAsQuiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
     marchMesh!(meshy, ϕ)
+    saveObj(meshy, "mesh_$(suffix).obj", flipxy=true)
 end
 
 function setHeights!(mesh, heights, heightScale=1.0, heightOffset=50)
@@ -815,6 +832,98 @@ function testSolidify()
     saveObj(solidMesh, "testSolidify2.obj")
 end
 
+function plotAsQuiver(g; stride=4, scale=300, max_length=2, flipxy=false, reversey=false, reversex=false)
+    h, w = size(g)
+    xs = Float64[]
+    ys = Float64[]
+    us = Float64[]
+    vs = Float64[]
+    for x = 1:stride:w
+        for y = 1:stride: h
+            if reversex
+                push!(xs, x)
+            else
+                push!(xs, -x)
+            end
+            
+            if reversey
+                push!(ys, -y)
+            else
+                push!(ys, y)
+            end
+
+            p1 = g[y, x]
+            u = (g[y, x+1] - g[y, x]) * scale
+            v = (g[y+1, x] - g[y, x]) * scale
+
+            u = -u
+
+            if reversey
+                v = -v
+            end
+
+            if reversex
+                u = -u
+            end
+
+            # println(u, v)
+            if u >= 0
+                push!(us, min(u, max_length))
+            else
+                push!(us, max(u, -max_length))
+            end
+
+            if v >= 0
+                push!(vs, min(v, max_length))
+            else
+                push!(vs, max(v, -max_length))
+            end
+        end
+    end
+    if flipxy
+        q = quiver(ys, xs, quiver=(vs, us),aspect_ratio=:equal)
+    else
+        q = quiver(xs, ys, quiver=(us, vs),aspect_ratio=:equal)
+    end
+    display(q)
+    readline()
+end
+
+function plotVAsQuiver(vx, vy; stride=4, scale=300, max_length=2,)
+    h, w = size(vx)
+
+    xs = Float64[]
+    ys = Float64[]
+    us = Float64[]
+    vs = Float64[]
+
+    for x = 1:stride:w
+        for y = 1:stride: h
+            push!(xs, x)
+            push!(ys, h - y)
+
+            u = vx[x, y]
+            v = vy[x, y]
+
+            if u == 0
+                u = 0.001
+            end
+            if v == 0
+                v = 0.001
+            end
+
+            push!(us, u)
+            push!(vs, v)
+            # println(u, ": ", v)
+
+        end
+    end
+    # readline()
+    q = quiver(xs, ys, quiver=(us, vs),aspect_ratio=:equal)
+    display(q)
+    readline()
+end
+
 function main()
     # img = Gray.(load("cat.jpg"))
     # img = Gray.(load("necco2.jpg"))
@@ -830,9 +939,13 @@ function main()
     boost_ratio = mesh_sum / image_sum
     # img3 is 512x512
     img3 = img2 .* boost_ratio    
+    
     oneIteration(meshy, img3, "it1")
     oneIteration(meshy, img3, "it2")
     oneIteration(meshy, img3, "it3")
+    
+    return
+
     # oneIteration(meshy, img3, "it4")
     # oneIteration(meshy, img3, "it5")
     # oneIteration(meshy, img3, "it6")
@@ -845,7 +958,7 @@ function main()
     # newMesh = setHeights(meshy, h)
 
     solidMesh = solidify(meshy)
-    saveObj(solidMesh, "final_scripted.obj", 1/512.0 * artifactSize, 1/512.0 * artifactSize)
+    saveObj(solidMesh, "final_scripted.obj", scale=1/512.0 * artifactSize, scalez=1/512.0 * artifactSize)
     meshy, img3
 end
 
