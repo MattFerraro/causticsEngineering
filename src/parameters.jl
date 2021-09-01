@@ -15,7 +15,3 @@ global Grid_Width = Grid_Definition
 global Grid_Height = Grid_Definition
 
 const ω = 2 / (1 + π / Grid_Width)
-
-
-
-

@@ -13,14 +13,16 @@ function create_mesh(width::Int, height::Int)
 
         new_mesh.topTriangles[row, col] = Triangle(
             Point3D(Float64(row), Float64(col), 0.0, 0.0, 0.0),
-            Point3D(Float64(row+1), Float64(col), 0.0, 0.0, 0.0),
-            Point3D(Float64(row), Float64(col+1), 0.0, 0.0, 0.0))
+            Point3D(Float64(row + 1), Float64(col), 0.0, 0.0, 0.0),
+            Point3D(Float64(row), Float64(col + 1), 0.0, 0.0, 0.0),
+        )
         new_mesh.topNodes[row, col] = centroid(new_mesh.topTriangles[row, col])
 
         new_mesh.botTriangles[row, col] = Triangle(
-            Point3D(Float64(row), Float64(col+1), 0.0, 0.0, 0.0),
-            Point3D(Float64(row+1), Float64(col), 0.0, 0.0, 0.0),
-            Point3D(Float64(row+1), Float64(col+1), 0.0, 0.0, 0.0))
+            Point3D(Float64(row), Float64(col + 1), 0.0, 0.0, 0.0),
+            Point3D(Float64(row + 1), Float64(col), 0.0, 0.0, 0.0),
+            Point3D(Float64(row + 1), Float64(col + 1), 0.0, 0.0, 0.0),
+        )
         new_mesh.botNodes[row, col] = centroid(new_mesh.botTriangles[row, col])
     end
 
@@ -33,11 +35,7 @@ $(SIGNATURES)
 
 Given 3 points and 3 velocities, calculate the `t` required to bring the area of that triangle to zero
 """
-function find_maximum_t(
-    p1::Point3D,
-    p2::Point3D,
-    p3::Point3D,
-)
+function find_maximum_t(p1::Point3D, p2::Point3D, p3::Point3D)
 
     # The area of a triangle is 1/2 * [ Ax (By - Cy) + Bx (Cy - Ay) + Cx (Ay - By)]
     # where each point of the triangle is where it will be after time t
@@ -46,11 +44,15 @@ function find_maximum_t(
 
     # To make the calculation simpler, everything is translated so that A is at the
     # origin of the plane and its velocity is nil.
-    Bx = p2.x - p1.x; By = p2.y - p1.y
-    Cx = p3.x - p1.x; Cy = p3.y - p1.y
+    Bx = p2.x - p1.x
+    By = p2.y - p1.y
+    Cx = p3.x - p1.x
+    Cy = p3.y - p1.y
 
-    t_vBx = p2.vx - p1.vx; t_vBy = p2.vy - p1.vy
-    t_vCx = p3.vx - p1.vx; t_vCy = p3.vy - p1.vy
+    t_vBx = p2.vx - p1.vx
+    t_vBy = p2.vy - p1.vy
+    t_vCx = p3.vx - p1.vx
+    t_vCy = p3.vy - p1.vy
 
     # After this, given that Ax = Ay = 0, the area is nil iff
     # Bx Cy - Cx By = 0.
@@ -76,7 +78,7 @@ function find_maximum_t(
         else
             # There can be no solution if, after translation, B abd C move in parallel direction.
             # C will never end up on the line AB.result_mesh.rectangles[row, col].z = height_map[row, col]
-        result_mesh.rectangles[row, col].z = height_map[row, col]
+            result_mesh.rectangles[row, col].z = height_map[row, col]
 
             # Very unlikely with Float64.
             return missing, missing
@@ -105,9 +107,9 @@ function save_stl!(
         for row ∈ 1:height, col ∈ 1:width
             n = mesh.topNodes[row, col]
             if flipxy
-                println(io,"v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
+                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
             else
-                println(io,"v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
+                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
 
             t = mesh.topTriangles[row, col]
@@ -119,9 +121,9 @@ function save_stl!(
 
             n = mesh.botNodes[row, col]
             if flipxy
-                println(io,"v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
+                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
             else
-                println(io,"v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
+                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
 
             t = mesh.botTriangles[row, col]
@@ -241,9 +243,9 @@ function relax!(height_map::Matrix{Float64}, D::Matrix{Float64})
     embedding[:, :] .= val_average
     embedding[2:height+1, 2:height+1] .= height_map[:, :]
 
-    val_up =    embedding[1:height,   2:width+1]
-    val_down =  embedding[3:height+2, 2:width+1]
-    val_left =  embedding[2:height+1, 1:width]
+    val_up = embedding[1:height, 2:width+1]
+    val_down = embedding[3:height+2, 2:width+1]
+    val_left = embedding[2:height+1, 1:width]
     val_right = embedding[2:height+1, 3:width+2]
 
     delta = (val_up + val_down + val_left + val_right - D) ./ 4.0
@@ -367,8 +369,10 @@ function quantifyLoss!(D, suffix, img)
     println("\tMinimum: $(minimum(D))")
     println("\tMaximum: $(maximum(D))")
 
-    blue = zeros(size(D)); blue[D.>0] = D[D.>0]
-    red = zeros(size(D));  red[D.<0] = -D[D.<0]
+    blue = zeros(size(D))
+    blue[D.>0] = D[D.>0]
+    red = zeros(size(D))
+    red[D.<0] = -D[D.<0]
     green = zeros(size(D))
 
     println(size(blue))
@@ -412,7 +416,7 @@ function oneIteration(meshy, img, suffix)
 
     ϕ = Matrix{Float64}(undef, width, height)
 
-    for i = 1:Grid_Definition * 10
+    for i = 1:Grid_Definition*10
         max_update = relax!(ϕ, D)
 
         i % 500 == 0 && println(max_update)
@@ -561,7 +565,7 @@ function solidify(inputMesh, offset = 100)
     end
 
     println("We've filled up $(count-1) triangles")
-    if 2*count != numTrianglesBottom
+    if 2 * count != numTrianglesBottom
         println(
             "Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom)",
         )
@@ -684,7 +688,7 @@ function findSurface(mesh, image, f, imgWidth)
 
     h = zeros(Float64, width, height)
     max_update = 0
-    for i = 1:Grid_Definition * 10 / 2
+    for i = 1:Grid_Definition*10/2
         max_update = relax!(h, divergence)
 
         i % 100 == 0 && println(max_update)
@@ -854,7 +858,7 @@ function engineer_caustics(img)
         solidMesh,
         "./examples/original_image.obj",
         scale = Float64(1 / Grid_Definition * Artifact_Size),
-        scalez = Float64(1 / Grid_Definition * Artifact_Size)
+        scalez = Float64(1 / Grid_Definition * Artifact_Size),
     )
 
     return meshy, img3

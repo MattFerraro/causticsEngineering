@@ -11,7 +11,7 @@ mutable struct Point3D
     vx::Float64
     vy::Float64
 
-    Point3D() = new(0.0, 0.0,0.0,0.0,0.0)
+    Point3D() = new(0.0, 0.0, 0.0, 0.0, 0.0)
 end
 
 
@@ -32,7 +32,7 @@ $(SIGNATURES)
 A midpoint is the average between two points
 """
 midpoint(p1::Point3D, p2::Point3D) =
-    Point3D((p1.x + p2.x )/ 2.0, (p1.y + p2.y )/ 2.0, (p1.z + p2.z )/ 2.0, 0, 0)
+    Point3D((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0, (p1.z + p2.z) / 2.0, 0, 0)
 
 
 """
@@ -107,12 +107,11 @@ struct Mesh
 
     Mesh(height::Int, width::Int) = new(
         Matrix{Point3D}(undef, height, width),
-
         Matrix{Triangle}(undef, height, width),
         Matrix{Point3D}(undef, height, width),
-
         Matrix{Triangle}(undef, height, width),
-        Matrix{Point3D}(undef, height, width))
+        Matrix{Point3D}(undef, height, width),
+    )
 end
 
 """
@@ -127,7 +126,8 @@ struct TopBottomMeshes
     bottomMesh::Mesh
     topMesh::Mesh
 
-    TopBottomMeshes(height::Int, width::Int) = new(height, width, Mesh(height, width), Mesh(height, width))
+    TopBottomMeshes(height::Int, width::Int) =
+        new(height, width, Mesh(height, width), Mesh(height, width))
 end
 
 """
@@ -188,6 +188,3 @@ function centroid(mesh::Mesh, height::Int, width::Int)
 
     return centroid(mesh, index)
 end
-
-
-
