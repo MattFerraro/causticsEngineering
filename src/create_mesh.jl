@@ -1,27 +1,9 @@
 """
 $(SIGNATURES)
 
-This func returns a square mesh, centered on zero, with (width * height) nodes
-"""
-function create_mesh(height::Int, width::Int)
-
-    new_mesh = Mesh(height, width)
-
-    for row = 1:height+1, col = 1:width+1
-        new_mesh.rectangles[row, col] =
-            Point3D(Float64(row), Float64(col), Height_Offset, 0.0, 0.0)
-    end
-
-    return new_mesh
-end
-
-
-"""
-$(SIGNATURES)
-
 Given 3 points and their velocities, calculate the time `t` required to bring the area of that triangle to zero
 """
-function find_maximum_t(p1::Point3D, p2::Point3D, p3::Point3D)
+function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
     # The area of a triangle is 1/2 * [ Ax (By - Cy) + Bx (Cy - Ay) + Cx (Ay - By)]
     # where each point of the triangle is where it will be after time t
     # i.e. a point goes from P to P+tV where V is the velocity of that point.
@@ -43,7 +25,6 @@ function find_maximum_t(p1::Point3D, p2::Point3D, p3::Point3D)
     # (Bx + t_vBx) (Cy + t_vCy )- (Cx + t_vCx) (By + t_vBy) = 0.
     # After expansion and reshuffling to have a quadratic equation where t
     # is the variable, the coefficients of that equation are:
-
     a = t_vBy * t_vCx - t_vCy * t_vBx
     b = By * t_vCx + Cx * t_vBy - (Bx * t_vCy + Cy * t_vBx)
     c = Cx * By - Bx * Cy
@@ -61,6 +42,7 @@ function find_maximum_t(p1::Point3D, p2::Point3D, p3::Point3D)
             d = sqrt(discriminant)
             return (-b - d) / 2a, (-b + d) / 2a
         else
+
             # There can be no solution if, after translation, B abd C move in parallel direction.
             # C will never end up on the line AB.result_mesh.rectangles[row, col].z = height_map[row, col]
             result_mesh.rectangles[row, col].z = height_map[row, col]
@@ -78,7 +60,7 @@ $(SIGNATURES)
 This function saves the mesh object in stl format.
 """
 function save_stl!(
-    mesh::Mesh,
+    mesh::RectangleMesh,
     filename::String;
     scale = 1.0,
     scalez = 1.0,
@@ -92,10 +74,8 @@ function save_stl!(
         for row ∈ 1:height, col ∈ 1:width
 
             # Top triangle
-            top_triangle_1 = mesh.rectangles[row, col]
-            top_triangle_2 = mesh.rectangles[row+1, col]
-            top_triangle_3 = mesh.rectangles[row, col+1]
-            n = centroid(top_triangle_1, top_triangle_2, top_triangle_3)
+            top_triangle = top_triangle(mesh, row, col)
+            n = centroid(top_triangle)
 
             if flipxy
                 println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
@@ -111,10 +91,8 @@ function save_stl!(
 
 
             # Bottom triangle
-            bot_triangle_1 = mesh.rectangles[row, col+1]
-            bot_triangle_2 = mesh.rectangles[row+1, col]
-            bot_triangle_3 = mesh.rectangles[row+1, col+1]
-            n = centroid(bot_triangle_1, bot_triangle_2, bot_triangle_3)
+            bot_triangle = bottom_triangle(mesh, row, col)
+            n = centroid(bot_triangle)
 
             if flipxy
                 println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
@@ -146,7 +124,7 @@ function stl_2_mesh(filename)
     lines = readlines(filename)
 
     vertexLines = [l for l in lines if startswith(l, "v")]
-    nodeList = Vector{Point3D}(undef, size(vertexLines))
+    nodeList = Vector{Vertex3D}(undef, size(vertexLines))
 
     count = 0
     for line in vertexLines
@@ -155,7 +133,7 @@ function stl_2_mesh(filename)
         x = parse(Float64, elements[2])
         y = parse(Float64, elements[3])
         z = parse(Float64, elements[4]) * 10
-        pt = Point3D(x, y, z, 0, 0)
+        pt = Vertex3D(x, y, z, 0, 0)
         nodeList[count] = pt
     end
 
@@ -173,7 +151,12 @@ function stl_2_mesh(filename)
     dimsLines = [l for l in lines if startswith(l, "dims")]
     elements = split(dimsLines[1], " ")
 
-    return Mesh(nodeList, triangles, parse(Int64, elements[2]), parse(Int64, elements[3]))
+    return RectangleMesh(
+        nodeList,
+        triangles,
+        parse(Int64, elements[2]),
+        parse(Int64, elements[3]),
+    )
 end
 
 
@@ -198,7 +181,7 @@ end
 """
 $(SIGNATURES)
 """
-function get_pixel_area(mesh::Mesh)
+function get_pixel_area(mesh::RectangleMesh)
     # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
     # The Z coordinate represents the value. brightness is just proportional to area.
     height, width = size(mesh)
@@ -215,7 +198,7 @@ function get_pixel_area(mesh::Mesh)
         # *------*
         #
         pixelAreas[row, col] =
-            triangle_area(top_triangle(mesh, row, col)) +
+            triangle_area(top_triangles(mesh, row, col)) +
             triangle_area(bottom_triangle(mesh, row, col))
     end
 
@@ -265,26 +248,31 @@ This function will take a `grid_definition x grid_definition` matrix and returns
 function matrix_to_mesh(height_map::Matrix{Float64})
     height, width = size(height_map)
 
-    result_mesh = create_mesh(height, width)
+    mesh = RectangleMesh(height, width)
 
-    for row = 1:height, col = 1:width
-        result_mesh.rectangles[row, col].z = height_map[row, col]
+    for row ∈ 1:height, col ∈ 1:width
+        mesh.vertexList[mesh.to_index(row, col)].z = height_map[row, col]
     end
 
     # The borders height is forced at 0.
-    result_mesh.rectangles[:, 1].z .= 0.0
-    result_mesh.rectangles[:, end].z .= 0.0
-    result_mesh.rectangles[1, :].z .= 0.0
-    result_mesh.rectangles[end, :].z .= 0.0
+    for r ∈ 1:height+1
+        mesh.vertexList[mesh.to_index(r, 1)].z = 0.0
+        mesh.vertexList[mesh.to_index(r, width + 1)].z = 0.0
+    end
 
-    return result_mesh
+    for c ∈ 1:width+1
+        mesh.vertexList[mesh.to_index(1, c)].z = 0.0
+        mesh.vertexList[mesh.to_index(height + 1, c)].z = 0.0
+    end
+
+    return mesh
 end
 
 
 """
 $(SIGNATURES)
 """
-function march_mesh!(mesh::Mesh, ϕ::Matrix{Float64})
+function march_mesh!(mesh::RectangleMesh, ϕ::Matrix{Float64})
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
 
     height, width = size(mesh)
@@ -297,26 +285,26 @@ function march_mesh!(mesh::Mesh, ϕ::Matrix{Float64})
         Vx = ∇ϕᵤ[x, y]
         Vy = ∇ϕᵥ[x, y]
 
-        mesh.velocities[row, col].vx = -Vx
-        mesh.velocities[row, col].vy = -Vy
+        mesh.vertexList[mesh.to_index(row, col)].vx = -Vx
+        mesh.vertexList[mesh.to_index(row, col)].vy = -Vy
     end
 
     # The velocity matrix was initialized with zeros everywhere. We nevertheless ovewrite them just in case...
-    mesh.velocities[:, 1].vx .= 0.0
-    mesh.velocities[:, end].vy = 0.0
+    mesh.rectangles[:, 1].vx .= 0.0
+    mesh.rectangles[:, end].vy = 0.0
 
-    mesh.velocities[1, :].vx .= 0.0
-    mesh.velocities[end, :].vy = 0.0
+    mesh.rectangles[1, :].vx .= 0.0
+    mesh.rectangles[end, :].vy = 0.0
 
 
     # Basically infinity time to shrink a triangle to zip.
     min_t = 10_000.0
 
     for row ∈ 1:height, col ∈ 1:width
-        top_triangle = top_triangle[row, col]
-        p1 = top_triangle.pt1
-        p2 = top_triangle.pt2
-        p3 = top_triangle.pt3
+        top_tri = top_triangles(mesh, row, col)
+        p1 = top_tri.pt1
+        p2 = top_tri.pt2
+        p3 = top_tri.pt3
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested in positive times.
@@ -328,10 +316,10 @@ function march_mesh!(mesh::Mesh, ϕ::Matrix{Float64})
         end
 
 
-        bot_triangle = bottom_triangle[row, col]
-        p1 = bot_triangle.pt1
-        p2 = bot_triangle.pt2
-        p3 = bot_triangle.pt3
+        bottom_tri = bottom_triangle(mesh, row, col)
+        p1 = bottom_tri.pt1
+        p2 = bottom_tri.pt2
+        p3 = bottom_tri.pt3
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested in positive times.
@@ -394,18 +382,18 @@ end
 """
 $(SIGNATURES)
 """
-function single_iteration!(mesh, img, suffix)
+function single_iteration!(mesh, image, suffix)
     # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
     LJ = get_pixel_area(mesh)
-    D = Float64.(LJ - img)
+    D = Float64.(LJ - image)
 
     # Save the loss image as a png
     println(minimum(D))
     println(maximum(D))
-    quantifyLoss!(D, suffix, img)
+    quantifyLoss!(D, suffix, image)
 
-    width, height = size(img)
+    width, height = size(image)
 
     ϕ = Matrix{Float64}(undef, width, height)
 
@@ -437,11 +425,16 @@ end
 """
 $(SIGNATURES)
 """
-function set_heights!(mesh, height_map, height_scale = 1.0)
+function set_heights!(
+    mesh,
+    height_map,
+    height_scale = 1.0,
+    height_offset = Top_Offset / Meters_Per_Pixel,
+)
     width, height = size(height_map)
 
     for row ∈ 1:height, col ∈ 1:width
-        mesh.rectangles[row, col].z = height_map[x, y] * height_scale + Height_Offset
+        mesh.rectangles[row, col].z = height_map[x, y] * height_scale + height_offset
 
         if x == 100 && y == 100
             println(
@@ -451,10 +444,10 @@ function set_heights!(mesh, height_map, height_scale = 1.0)
     end
 
     # Forces the borders at Height_Offset. They will never change because nil velocity.
-    mesh.rectangles[1, :] .= Height_Offset
-    mesh.rectangles[end, :] .= Height_Offset
-    mesh.rectangles[:, 1] .= Height_Offset
-    mesh.rectangles[:, end] .= Height_Offset
+    mesh.rectangles[1, :] .= height_offset
+    mesh.rectangles[end, :] .= height_offset
+    mesh.rectangles[:, 1] .= height_offset
+    mesh.rectangles[:, end] .= height_offset
 end
 
 
@@ -463,7 +456,7 @@ $(SIGNATURES)
 """
 function set_heights(height_map, height_scale = 1.0)
     height, width = size(height_map)
-    mesh = create_mesh(height, width)
+    mesh = RectangleMesh(height, width)
 
     return set_heights!(mesh, height_map, height_scale = 1.0)
 end
@@ -472,94 +465,41 @@ end
 """
 $(SIGNATURES)
 """
-function solidify(inputMesh, offset = 100)
-    height, width = size(inputMesh)
+function create_solid(mesh, bottom_offset = Bottom_Offset / Meters_Per_Pixel)
+    height, width = size(mesh)
 
-    totalNodes = width * height * 2
-    nodeList = Vector{Point3D}(undef, totalNodes)
+    ###
+    ### Top mesh
+    ###
+    # List top mesh top triangles
+    list_triangles_top_top = [top_triangles(mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
 
-    nodeArrayTop = Matrix{Point3D}(undef, width, height)
-    nodeArrayBottom = Matrix{Point3D}(undef, width, height)
+    # List top mesh bottom triangles
+    list_triangles_top_bottom = [bottom_triangle(mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
 
-    # imagine a 4x4 image. 4 * 2 + 2 * 2 = 12
-    numEdgeNodes = width * 2 + (height - 2) * 2
 
-    numTrianglesBottom = numTrianglesTop = (width - 1) * (height - 1) * 2
-    numTrianglesEdges = numEdgeNodes * 2
-
-    totalTriangles = numTrianglesBottom + numTrianglesTop + numTrianglesEdges
-
-    println(
-        "Specs: $(width)  $(height)  $(totalNodes)  $(numEdgeNodes)  $(numTrianglesBottom) $(totalTriangles)",
-    )
-
+    ###
+    ### Botttom mesh
+    ###
     # Build the bottom surface
-    count = 0
-    for y = 1:height, x = 1:width
-        count += 1
-        newPoint = Point3D(x, y, -offset, x, y)
-        nodeList[count] = newPoint
-        nodeArrayBottom[x, y] = newPoint
+    bottom_mesh = RectangleMesh(height, width)
+    for row = 1:height+1, col = 1:width+1
+        bottom_mesh.rectangles[row, col] = Vertex3D(row, col, -offset, 0.0, 0.0)
     end
 
-    # Copy in the top surface
-    for y = 1:height, x = 1:width
-        count += 1
-        node = inputMesh.nodeArray[x, y]
-        copiedPoint = Point3D(node.x, node.y, node.z, node.ix, node.iy)
-        if node.ix != x
-            println("OH NO POINTS NOT MATCHED $(x) vs $(node.ix)")
-        end
-        if node.iy != y
-            println("OH NO POINTS NOT MATCHED $(y) vs $(node.iy)")
-        end
+    # List top mesh top triangles
+    list_triangles_bot_top =
+        [top_triangles(bottom_mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
 
-        nodeList[count] = copiedPoint
-        nodeArrayTop[x, y] = copiedPoint
-    end
+    # List top mesh bottom triangles
+    list_triangles_bot_bottom =
+        [bottom_triangle(bottom_mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
 
-    println("We now have $(count-1) valid nodes")
 
-    # Build the triangles for the bottom surface
-    triangles = Vector{Triangle}(undef, totalTriangles)
-    count = 0
-    for y = 1:(height-1), x = 1:(width-1)
-        count += 1
-        # here x and y establish the column of squares we're in
-        index_ul = (y - 1) * width + x
-        index_ur = index_ul + 1
 
-        index_ll = y * width + x
-        index_lr = index_ll + 1
-
-        triangles[2*count-1] = Triangle(index_ul, index_ll, index_ur)
-        triangles[2*count] = Triangle(index_lr, index_ur, index_ll)
-    end
-
-    println("We've filled up $(count-1) triangles")
-    if 2 * count != numTrianglesBottom
-        println(
-            "Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom)",
-        )
-    end
-
-    # Build the triangles for the top surface
-    for y = 1:(height-1), x = 1:(width-1)
-        count += 1
-
-        # here x and y establish the column of squares we're in
-        index_ul = (y - 1) * width + x + totalNodes / 2
-        index_ur = index_ul + 1
-
-        index_ll = y * width + x + totalNodes / 2
-        index_lr = index_ll + 1
-
-        triangles[2*count-1] = Triangle(index_ul, index_ur, index_ll)
-        triangles[2*count] = Triangle(index_lr, index_ll, index_ur)
-    end
-
-    println("We've filled up $(count-1) triangles")
-
+    ###
+    ### Side meshes
+    ###
     # Build the triangles to close the mesh
     x = 1
     for y = 1:(height-1)
@@ -609,7 +549,7 @@ function solidify(inputMesh, offset = 100)
         triangles[2*count] = Triangle(ur, ll, lr)
     end
 
-    return Mesh(nodeList, nodeArrayBottom, triangles, width, height)
+    return RectangleMesh(nodeList, nodeArrayBottom, triangles, width, height)
 end
 
 
@@ -617,12 +557,13 @@ end
 $(SIGNATURES)
 """
 function find_surface(mesh, image, f = Focal_Length, picture_width = Picture_Side)
-    height, width = size(image)
+    height, width = size(mesh)
 
     H = f
     metersPerPixel = picture_width / width
     println(metersPerPixel)
 
+    # h(eight) indexes rows, w(idth) indexes columns
     Nx = zeros(Float64, height + 1, width + 1)
     Ny = zeros(Float64, height + 1, width + 1)
 
@@ -636,8 +577,8 @@ function find_surface(mesh, image, f = Focal_Length, picture_width = Picture_Sid
         dz = H_minus_h
 
         # k = η * sqrt(dx * dx + dy * dy + H_minus_h * H_minus_h) - H_minus_h
-        Ny[i, j] = tan(atan(dy / dz) / (n₁ - n₂))
-        Nx[i, j] = tan(atan(dx / dz) / (n₁ - n₂))
+        Nx[row, col] = tan(atan(dx / dz) / (n₁ - n₂))
+        Ny[row, col] = tan(atan(dy / dz) / (n₁ - n₂))
     end
 
 
@@ -645,26 +586,30 @@ function find_surface(mesh, image, f = Focal_Length, picture_width = Picture_Sid
     divergence = zeros(Float64, width, height)
 
     for row ∈ 1:height, col ∈ 1:width
-        δx = (Nx[i+1, j] - Nx[i, j])
-        δy = (Ny[i, j+1] - Ny[i, j])
-        divergence[i, j] = δx + δy
+        δx = Nx[row+1, col] - Nx[row, col]
+        δy = Ny[row, col+1] - Ny[row, col]
+        divergence[row, col] = δx + δy
 
-        i == 100 && j == 100 && println("div: $(divergence[i, j])")
+        (row % 100 == 0) &&
+            (col % 100 == 0) &&
+            println("div[$(row), $(col)]: $(divergence[row, col])")
     end
     println("Have all the divergences")
 
-    h = zeros(Float64, height, width)
-    max_update = 0
-    for i = 1:N_Iterations_Convergence
-        max_update = relax!(h, divergence)
+    height_map = zeros(Float64, height, width)
+    max_update = 0.0
+    for iter = 1:N_Iterations_Convergence
+        max_update = relax!(height_map, divergence)
 
-        i % 100 == 0 && println(max_update)
-        max_update < 0.00001 && (
-            println("Convergence reached at step $(i) with max_update of $(max_update)"); break
-        )
+        iter % 100 == 0 && println(max_update)
+        if max_update < 0.00001
+            println("Convergence reached at step $(iter) with max_update of $(max_update)")
+            break
+        end
     end
+
     # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
-    return h, metersPerPixel
+    return height_map, metersPerPixel
 end
 
 
@@ -680,7 +625,7 @@ function engineer_caustics(img)
 
     # meshy is the same size as the image with an extra row/column to have coordinates to
     # cover each image pixel with a triangle.
-    mesh = create_mesh(width + 1, height + 1)
+    mesh = RectangleMesh(width + 1, height + 1)
 
     # We need to boost the brightness of the image so that its sum and the sum of the area are equal
     mesh_sum = width * height
@@ -704,7 +649,7 @@ function engineer_caustics(img)
 
     set_heights!(mesh, h)
 
-    solidMesh = solidify(mesh)
+    solidMesh = create_solid(mesh)
     save_stl!(
         solidMesh,
         "./examples/original_image.obj",
