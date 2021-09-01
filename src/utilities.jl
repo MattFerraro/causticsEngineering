@@ -7,13 +7,12 @@ mutable struct Point3D
     y::Float64
     z::Float64
 
-    # Calculated velocity at those coordinates (velocity along z not necessary)
+    # Velocity vector (velocity along z not necessary)
     vx::Float64
     vy::Float64
 
     Point3D() = new(0.0, 0.0, 0.0, 0.0, 0.0)
 end
-
 
 """
 $(SIGNATURES)
@@ -32,7 +31,7 @@ $(SIGNATURES)
 A midpoint is the average between two points
 """
 midpoint(p1::Point3D, p2::Point3D) =
-    Point3D((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0, (p1.z + p2.z) / 2.0, 0, 0)
+    Point3D((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0, (p1.z + p2.z) / 2.0, 0.0, 0.0)
 
 
 """
@@ -92,32 +91,20 @@ $(TYPEDEF)
 A mesh is represents a single surface. First the surface is split into rectangles of size (width, height). Then,
 each rectangle is broken into a top-left triangle and a bottom-right triangle.
 
-`arrays` represents the matrix of rectangles. Since each corner is shared by 4 rectangles, it is enough to
+`rectangles` represents the matrix of rectangles. Since each corner is shared by 4 rectangles, it is enough to
 only record the top-left corner of each.
-`nodes` contains the point at the center of a triangle of a given triangle.
 """
 struct Mesh
     rectangles::Matrix{Point3D}
-
-    topTriangles::Matrix{Triangle}
-    topNodes::Matrix{Point3D}
-
-    botTriangles::Matrix{Triangle}
-    botNodes::Matrix{Point3D}
-
-    Mesh(height::Int, width::Int) = new(
-        Matrix{Point3D}(undef, height, width),
-        Matrix{Triangle}(undef, height, width),
-        Matrix{Point3D}(undef, height, width),
-        Matrix{Triangle}(undef, height, width),
-        Matrix{Point3D}(undef, height, width),
-    )
+    Mesh(height::Int, width::Int) = new(Matrix{Point3D}(undef, height + 1, width + 1))
 end
 
 """
 $(TYPEDEF)
 
+
 Meshes representing the block of acrylate. Bottom is facing the light source; Top is facing the caustics.
+CHECK whether bottomMesh is at all useful.
 """
 struct TopBottomMeshes
     height::Int
@@ -128,40 +115,6 @@ struct TopBottomMeshes
 
     TopBottomMeshes(height::Int, width::Int) =
         new(height, width, Mesh(height, width), Mesh(height, width))
-end
-
-"""
-$(SIGNATURES)
-"""
-function top_triangle_area(mesh::Mesh, height::Int, width::Int)
-    triangle = mesh.topTriangles[height, width]
-    pt1 = mesh.topNodes[triangle.pt1]
-    pt2 = mesh.topNodes[triangle.pt2]
-    pt3 = mesh.topNodes[triangle.pt3]
-
-    return top_triangle_area(pt1, pt2, pt3)
-end
-
-"""
-$(SIGNATURES)
-"""
-function bot_triangle_area(mesh::Mesh, height::Int, width::Int)
-    triangle = mesh.topTriangles[height, width]
-    pt1 = triangle.pt1
-    pt2 = triangle.pt2
-    pt3 = triangle.pt3
-
-    return triangle_area(pt1, pt2, pt3)
-end
-
-"""
-$(SIGNATURES)
-"""
-function top_triangle_area(mesh::Mesh, height::Int, width::Int)
-    mesh_height, _ = size(mesh.topTriangles)
-    index = height + width * mesh_height
-
-    return top_triangle_area(mesh, index)
 end
 
 

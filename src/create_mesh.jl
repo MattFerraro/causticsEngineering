@@ -1,4 +1,3 @@
-
 """
 $(SIGNATURES)
 
@@ -8,22 +7,8 @@ function create_mesh(width::Int, height::Int)
 
     new_mesh = Mesh(height, width)
 
-    for row = 1:height, col = 1:width
+    for row = 1:height+1, col = 1:width+1
         new_mesh.rectangles[row, col] = Point3D(Float64(row), Float64(col), 0.0, 0.0, 0.0)
-
-        new_mesh.topTriangles[row, col] = Triangle(
-            Point3D(Float64(row), Float64(col), 0.0, 0.0, 0.0),
-            Point3D(Float64(row + 1), Float64(col), 0.0, 0.0, 0.0),
-            Point3D(Float64(row), Float64(col + 1), 0.0, 0.0, 0.0),
-        )
-        new_mesh.topNodes[row, col] = centroid(new_mesh.topTriangles[row, col])
-
-        new_mesh.botTriangles[row, col] = Triangle(
-            Point3D(Float64(row), Float64(col + 1), 0.0, 0.0, 0.0),
-            Point3D(Float64(row + 1), Float64(col), 0.0, 0.0, 0.0),
-            Point3D(Float64(row + 1), Float64(col + 1), 0.0, 0.0, 0.0),
-        )
-        new_mesh.botNodes[row, col] = centroid(new_mesh.botTriangles[row, col])
     end
 
     return new_mesh
@@ -105,36 +90,49 @@ function save_stl!(
 
     open(filename, "w") do io
         for row ∈ 1:height, col ∈ 1:width
-            n = mesh.topNodes[row, col]
+
+            # Top triangle
+            top_triangle_1 = mesh.rectangles[row, col]
+            top_triangle_2 = mesh.rectangles[row+1, col]
+            top_triangle_3 = mesh.rectangles[row, col+1]
+
+            n = centroid(top_triangle_1, top_triangle_2, top_triangle_3)
             if flipxy
                 println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
             else
                 println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
 
-            t = mesh.topTriangles[row, col]
-            if reverse
-                println(io, "f $(t.pt3) $(t.pt2) $(t.pt1)")
-            else
-                println(io, "f $(t.pt1) $(t.pt2) $(t.pt3)")
-            end
-
-            n = mesh.botNodes[row, col]
             if flipxy
                 println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
             else
                 println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
 
-            t = mesh.botTriangles[row, col]
-            if reverse
-                println(io, "f $(t.pt3) $(t.pt2) $(t.pt1)")
+
+            # Bottom triangle
+            bot_triangle_1 = mesh.rectangles[row, col+1]
+            bot_triangle_2 = mesh.rectangles[row+1, col]
+            bot_triangle_3 = mesh.rectangles[row+1, col+1]
+
+            n = centroid(bot_triangle_1, bot_triangle_2, bot_triangle_3)
+            if flipxy
+                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
             else
-                println(io, "f $(t.pt1) $(t.pt2) $(t.pt3)")
+                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
+
+            if flipxy
+                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
+            else
+                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
+            end
+
+
         end
 
-        println(io, "dims $(mesh.width) $(mesh.height)")
+        # CHECK
+        println(io, "dims $(2*mesh.width) $(2*mesh.height)")
     end
 end
 
@@ -188,9 +186,9 @@ function ∇(ϕ::Matrix{Float64})
     ∇ϕᵤ = zeros(Float64, width, height)   # the right edge will be filled with zeros
     ∇ϕᵥ = zeros(Float64, width, height)   # the buttom edge will be filled with zeros
 
-    for x = 1:width-1, y = 1:height-1
-        ∇ϕᵤ[x, y] = ϕ[x+1, y] - ϕ[x, y]
-        ∇ϕᵥ[x, y] = ϕ[x, y+1] - ϕ[x, y]
+    for row = 1:height, col = 1:width
+        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
+        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
     end
 
     return ∇ϕᵤ, ∇ϕᵥ
@@ -203,11 +201,13 @@ $(SIGNATURES)
 function getPixelArea(mesh::Mesh)
     # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
     # The Z coordinate represents the value. brightness is just proportional to area.
-    height, width = size(mesh.rectangles)
+    height_plus_1, width_plus_1 = size(mesh.rectangles)
+    height = height_plus_1 - 1
+    width = width_plus_1 - 1
 
     pixelAreas = zeros(Float64, height, width)
 
-    for row = 1:mesh.height, col = 1:width
+    for row = 1:height, col = 1:width
         #=
         *------*
         |    / |
@@ -216,12 +216,21 @@ function getPixelArea(mesh::Mesh)
         | /    |
         *------*
         =#
+
+        top_triangle_1 = mesh.rectangles[row, col]
+        top_triangle_2 = mesh.rectangles[row+1, col]
+        top_triangle_3 = mesh.rectangles[row, col+1]
+
+        bot_triangle_1 = mesh.rectangles[row, col+1]
+        bot_triangle_2 = mesh.rectangles[row+1, col]
+        bot_triangle_3 = mesh.rectangles[row+1, col+1]
+
         pixelAreas[width, col] =
-            triangle_area(mesh.topTriangles[height, width]) +
-            triangle_area(mesh.botTriangles[height, width])
+            triangle_area(top_triangle_1, top_triangle_2, top_triangle_3) +
+            triangle_area(bot_triangle_1, bot_triangle_2, bot_triangle_3)
     end
 
-    return topPixelAreas
+    return pixelAreas
 end
 
 
@@ -234,10 +243,11 @@ function relax!(height_map::Matrix{Float64}, D::Matrix{Float64})
     # boundary must be zero in all cases. See:
     # https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
 
-    width, height = size(height_map)
-    val_average = sum(height_map) / (width * height)
+    height, width = size(height_map)
+    n_pixels = height * width
+    val_average = sum(height_map) / n_pixels
 
-    # Embed matrix within a larger matrix for better vectorization
+    # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
     embedding = zeros(Float64, height + 2, width + 2)
 
     embedding[:, :] .= val_average
@@ -252,15 +262,7 @@ function relax!(height_map::Matrix{Float64}, D::Matrix{Float64})
     delta = ω .* (delta - height_map)
     height_map += delta
 
-    max_update = maximum(abs.(delta))
-
-
-    # node.z = .25 * (node_up.z + node_down.z + node_left.z + node_right.z) # simple averaging
-    # node.z += ω/4 * (node_up.z + node_down.z + node_left.z + node_right.z - 4 * node.z)
-
-    # matrix[x, y] += ω/4 * (val_up + val_down + val_left + val_right - 4 * val - D[x, y])
-
-    return max_update
+    return maximum(abs.(delta))
 end
 
 
@@ -274,13 +276,14 @@ function matrix_to_mesh(height_map::Matrix{Float64})
     height, width = size(height_map)
 
     result_mesh = create_mesh(height, width)
+
     for row = 1:height, col = 1:width
         result_mesh.rectangles[row, col].z = height_map[row, col]
 
-        result_mesh.topPixelAreas[row, col].pt1.z = height_map[row, col]
+        result_mesh.topTriangles[row, col].pt1.z = height_map[row, col]
         result_mesh.topNodes[row, col].z = height_map[row, col]
 
-        result_mesh.botPixelAreas[row, col].pt1.z = height_map[row, col]
+        result_mesh.botTriangles[row, col].pt1.z = height_map[row, col]
         result_mesh.botNodes[row, col].z = height_map[row, col]
     end
 
@@ -294,41 +297,46 @@ $(SIGNATURES)
 function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
 
-    height, imgHeight = size(mesh.rectangles)
+    height, width = size(mesh.rectangles)
 
     # For each point in the mesh we need to figure out its velocity
-    for x = 1:height, y = 1:mesh.height
+    # However all velocities on points located at a border will never move
+    # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
+    # of the same size.
+
+    for row ∈ 1:height, col ∈ 1:width
         # XY coordinates in the mesh ARE XY coordinates in the image. The mesh just needs an extra row and column
         # at the bottom right edge so that the triangles can be closed (a triangle per pixel)
 
-        if x == height
-            u = 0
-        else
-            u = (y == mesh.height ? ∇ϕᵤ[x, y-1] : ∇ϕᵤ[x, y])
-        end
+        Vx = ∇ϕᵤ[x, y]
+        Vy = ∇ϕᵥ[x, y]
 
-        if y == mesh.height
-            v = 0
-        else
-            v = (x == height ? ∇ϕᵥ[x-1, y] : ∇ϕᵥ[x, y])
-        end
-
-        velocities[x, y] = Point3D(-u, -v, 0, 0, 0)
+        mesh.velocities[row, col].vx = -Vx
+        mesh.velocities[row, col].vy = -Vy
     end
+
+    # The velocity matrix was initialized with zeros everywhere. We nevertheless ovewrite them just in case...
+    mesh.velocities[:, 1].vx .= 0.0
+    mesh.velocities[:, width].vy = 0.0
+
+    mesh.velocities[1, :].vx .= 0.0
+    mesh.velocities[width, :].vy = 0.0
+
 
     # Basically infinity time to shrink a triangle to zip.
     min_t = 10_000.0
 
-    for i ∈ 1:length(mesh.topTriangles)
-        triangle = mesh.topTriangles[i]
+    for row ∈ 1:height, col ∈ 1:width
+        top_triangle = mesh.topTriangles[row, col]
 
-        p1 = mesh.topNodes[triangle.pt1]
-        p2 = mesh.topNodes[triangle.pt2]
-        p3 = mesh.topNodes[triangle.pt3]
+        p1 = top_triangle.pt1
+        p2 = top_triangle.pt2
+        p3 = top_triangle.pt3
 
-        v1 = velocities[p1.ix, p1.iy]
-        v2 = velocities[p2.ix, p2.iy]
-        v3 = velocities[p3.ix, p3.iy]
+        # Remember the order of the triangle corners
+        v1 = mesh.velocities[row, col]
+        v2 = mesh.velocities[row+1, col]
+        v3 = mesh.velocities[row, col+1]
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         t1, t2 = find_maximum_t(p1, p2, p3, v1, v2, v3)
@@ -343,6 +351,33 @@ function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
                 min_t = t2
             end
         end
+
+
+        bot_triangle = mesh.botTriangles[row, col]
+
+        p1 = bot_triangle.pt1
+        p2 = bot_triangle.pt2
+        p3 = bot_triangle.pt3
+
+        # Remember the order of the triangle corners
+        v1 = mesh.velocities[row, col+1]
+        v2 = mesh.velocities[row+1, col]
+        v3 = mesh.velocities[row+1, col+1]
+
+        # Get the time, at that velocity, for the area of the triangle to be nil.
+        t1, t2 = find_maximum_t(p1, p2, p3, v1, v2, v3)
+
+        # We are only interested in positive times.
+        if !ismissing(t1)
+            if 0 < t1 < min_t
+                min_t = t1
+            end
+
+            if 0 < t2 < min_t
+                min_t = t2
+            end
+        end
+
     end
 
     println("Overall min_t:", min_t)
@@ -350,11 +385,12 @@ function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
     # Modify the mesh triangles but ensuring that we are far from destroying any of them.
     δ = min_t / 2
 
+    for row ∈ 1:height, col ∈ 1:width
+        Vx = velocities[row, col].vx
+        Vy = velocities[row, col].vy
 
-    for point in mesh.topNodes
-        v = velocities[point.ix, point.iy]
-        point.x = v.x * δ + point.x
-        point.y = v.y * δ + point.y
+        mesh.topTriangles[row, col].pt1.x += δ * Vx
+        mesh.topTriangles[row, col].pt1.x += δ * Vx
     end
 
     # saveObj(mesh, "gateau.obj")
