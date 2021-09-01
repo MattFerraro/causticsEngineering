@@ -7,9 +7,11 @@ mutable struct Point3D
     y::Float64
     z::Float64
 
-    # Velocity at those coordinates
-    ix::Int
-    iy::Int
+    # Calculated velocity at those coordinates (velocity along z not necessary)
+    vx::Float64
+    vy::Float64
+
+    Point3D() = new(0.0, 0.0,0.0,0.0,0.0)
 end
 
 
@@ -19,7 +21,8 @@ $(SIGNATURES)
 function dist(p1::Point3D, p2::Point3D)
     dx = p2.x - p1.x
     dy = p2.y - p1.y
-    return sqrt(dx * dx + dy * dy)
+    dz = p2.z - p1.z
+    return sqrt(dx^2 + dy^2 + dz^2)
 end
 
 
@@ -29,7 +32,7 @@ $(SIGNATURES)
 A midpoint is the average between two points
 """
 midpoint(p1::Point3D, p2::Point3D) =
-    Point3D(0.5p1.x + 0.5p2.x, 0.5p1.y + 0.5p2.y, 0.5p1.z + 0.5p2.z, 0, 0)
+    Point3D((p1.x + p2.x )/ 2.0, (p1.y + p2.y )/ 2.0, (p1.z + p2.z )/ 2.0, 0, 0)
 
 
 """
@@ -47,43 +50,6 @@ centroid(p1::Point3D, p2::Point3D, p3::Point3D) = Point3D(
 
 
 """
-$(TYPEDEF)
-"""
-struct Triangle
-    pt1::Int64
-    pt2::Int64
-    pt3::Int64
-
-    Triangle() = new(0, 0, 0)
-    Triangle(pt1, pt2, pt3) = new(pt1, pt2, pt3)
-end
-
-"""
-$(TYPEDEF)
-"""
-struct Mesh
-    nodes::Vector{Point3D}
-    nodeArray::Matrix{Point3D}
-    triangles::Vector{Triangle}
-    width::Int
-    height::Int
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function triangle_area(mesh::Mesh, index::Int)
-    triangle = mesh.triangles[index]
-    pt1 = mesh.nodes[triangle.pt1]
-    pt2 = mesh.nodes[triangle.pt2]
-    pt3 = mesh.nodes[triangle.pt3]
-
-    return triangle_area(pt1, pt2, pt3)
-end
-
-
-"""
 $(SIGNATURES)
 """
 function triangle_area(p1::Point3D, p2::Point3D, p3::Point3D)
@@ -94,3 +60,134 @@ function triangle_area(p1::Point3D, p2::Point3D, p3::Point3D)
 
     return sqrt(s * (s - a) * (s - b) * (s - c))
 end
+
+
+"""
+$(TYPEDEF)
+"""
+struct Triangle
+    pt1::Point3D
+    pt2::Point3D
+    pt3::Point3D
+
+    Triangle() = new(Point3D(), Point3D(), Point3D())
+    Triangle(pt1, pt2, pt3) = new(pt1, pt2, pt3)
+end
+
+"""
+$(SIGNATURES)
+"""
+centroid(t::Triangle) = centroid(t.p1, t.p2, t.p3)
+
+"""
+$(SIGNATURES)
+"""
+triangle_area(t::Triangle) = triangle_area(t.p1, t.p2, t.p3)
+
+
+
+"""
+$(TYPEDEF)
+
+A mesh is represents a single surface. First the surface is split into rectangles of size (width, height). Then,
+each rectangle is broken into a top-left triangle and a bottom-right triangle.
+
+`arrays` represents the matrix of rectangles. Since each corner is shared by 4 rectangles, it is enough to
+only record the top-left corner of each.
+`nodes` contains the point at the center of a triangle of a given triangle.
+"""
+struct Mesh
+    rectangles::Matrix{Point3D}
+
+    topTriangles::Matrix{Triangle}
+    topNodes::Matrix{Point3D}
+
+    botTriangles::Matrix{Triangle}
+    botNodes::Matrix{Point3D}
+
+    Mesh(height::Int, width::Int) = new(
+        Matrix{Point3D}(undef, height, width),
+
+        Matrix{Triangle}(undef, height, width),
+        Matrix{Point3D}(undef, height, width),
+
+        Matrix{Triangle}(undef, height, width),
+        Matrix{Point3D}(undef, height, width))
+end
+
+"""
+$(TYPEDEF)
+
+Meshes representing the block of acrylate. Bottom is facing the light source; Top is facing the caustics.
+"""
+struct TopBottomMeshes
+    height::Int
+    width::Int
+
+    bottomMesh::Mesh
+    topMesh::Mesh
+
+    TopBottomMeshes(height::Int, width::Int) = new(height, width, Mesh(height, width), Mesh(height, width))
+end
+
+"""
+$(SIGNATURES)
+"""
+function top_triangle_area(mesh::Mesh, height::Int, width::Int)
+    triangle = mesh.topTriangles[height, width]
+    pt1 = mesh.topNodes[triangle.pt1]
+    pt2 = mesh.topNodes[triangle.pt2]
+    pt3 = mesh.topNodes[triangle.pt3]
+
+    return top_triangle_area(pt1, pt2, pt3)
+end
+
+"""
+$(SIGNATURES)
+"""
+function bot_triangle_area(mesh::Mesh, height::Int, width::Int)
+    triangle = mesh.topTriangles[height, width]
+    pt1 = triangle.pt1
+    pt2 = triangle.pt2
+    pt3 = triangle.pt3
+
+    return triangle_area(pt1, pt2, pt3)
+end
+
+"""
+$(SIGNATURES)
+"""
+function top_triangle_area(mesh::Mesh, height::Int, width::Int)
+    mesh_height, _ = size(mesh.topTriangles)
+    index = height + width * mesh_height
+
+    return top_triangle_area(mesh, index)
+end
+
+
+"""
+$(SIGNATURES)
+
+Warning: not guaranteed to work in 3D?
+"""
+function centroid(mesh::Mesh, index::Int)
+    triangle = mesh.topTriangles[index]
+    p1 = mesh.topNodes[triangle.pt1]
+    p2 = mesh.topNodes[triangle.pt2]
+    p3 = mesh.topNodes[triangle.pt3]
+
+    return centroid(p1, p2, p3)
+end
+
+"""
+$(SIGNATURES)
+"""
+function centroid(mesh::Mesh, height::Int, width::Int)
+    mesh_height, _ = size(mesh.topTriangles)
+    index = height + width * mesh_height
+
+    return centroid(mesh, index)
+end
+
+
+
