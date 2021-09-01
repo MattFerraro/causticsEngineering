@@ -11,7 +11,7 @@ mutable struct Point3D
     vx::Float64
     vy::Float64
 
-    Point3D() = new(0.0, 0.0, 0.0, 0.0, 0.0)
+    Point3D() = new(0.0, 0.0, Height_Offset, 0.0, 0.0)
 end
 
 """
@@ -63,6 +63,25 @@ end
 
 """
 $(TYPEDEF)
+
+The algorithm works by allocating a rectangle from the exit mesh (the face where the light exits the block
+of acrylate). Initially, each rectangle representsa single pixel on that face and faces s single pixel on
+the caustics picture.
+
+Each rectangle is split into 2 trangles: one upper-left, the other bottom-right like:
+
+`
+*------*
+|    / |
+|   /  |
+|  /   |
+| /    |
+*------*
+`
+
+
+Although the corners of each triangle match corners of the rectangles, it is sometimes easier to think in terms
+of triangles rather than corners coming from different rectangles.
 """
 struct Triangle
     pt1::Point3D
@@ -96,27 +115,21 @@ only record the top-left corner of each.
 """
 struct Mesh
     rectangles::Matrix{Point3D}
+
     Mesh(height::Int, width::Int) = new(Matrix{Point3D}(undef, height + 1, width + 1))
 end
 
+
+
 """
-$(TYPEDEF)
+$(SIGNATURES)
 
-
-Meshes representing the block of acrylate. Bottom is facing the light source; Top is facing the caustics.
-CHECK whether bottomMesh is at all useful.
+Return the dimension of the mesh as the number of rectangles. It does not return the number of corner points.
 """
-struct TopBottomMeshes
-    height::Int
-    width::Int
-
-    bottomMesh::Mesh
-    topMesh::Mesh
-
-    TopBottomMeshes(height::Int, width::Int) =
-        new(height, width, Mesh(height, width), Mesh(height, width))
+function base.size(mesh::Mesh)
+    height, width = size(mesh.rectangles)
+    return height - 1, width - 1
 end
-
 
 """
 $(SIGNATURES)
@@ -132,12 +145,31 @@ function centroid(mesh::Mesh, index::Int)
     return centroid(p1, p2, p3)
 end
 
-"""
-$(SIGNATURES)
-"""
-function centroid(mesh::Mesh, height::Int, width::Int)
-    mesh_height, _ = size(mesh.topTriangles)
-    index = height + width * mesh_height
 
-    return centroid(mesh, index)
+function top_triangle(mesh::Mesh, row::Int, col::Int)
+    height, width = size(mesh)
+
+    if (1 <= row <= height) && (1 <= col <= width)
+        # The order is important
+        pt1 = mesh.rectangles[row, col]
+        pt2 = mesh.rectangles[row+1, col]
+        pt3 = mesh.rectangles[row, col+1]
+        return Triangle(pt1, pt2, pt3)
+    else
+        return nothing
+    end
+end
+
+function bottom_triangle(mesh::Mesh, row::Int, col::Int)
+    height, width = size(mesh)
+
+    if (1 <= row <= height) && (1 <= col <= width)
+        # The order is important
+        pt1 = mesh.rectangles[row, col+1]
+        pt2 = mesh.rectangles[row+1, col]
+        pt3 = mesh.rectangles[row+1, col+1]
+        return Triangle(pt1, pt2, pt3)
+    else
+        return nothing
+    end
 end
