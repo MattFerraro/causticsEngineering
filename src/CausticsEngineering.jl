@@ -2,6 +2,8 @@ module CausticsEngineering
 
 using DocStringExtensions
 
+using meshes
+
 using Images, Plots
 gr()
 

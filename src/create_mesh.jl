@@ -54,111 +54,7 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
 end
 
 
-"""
-$(SIGNATURES)
-
-This function saves the mesh object in stl format.
-"""
-function save_stl!(
-    mesh::RectangleMesh,
-    filename::String;
-    scale = 1.0,
-    scalez = 1.0,
-    reverse = false,
-    flipxy = false,
-)
-
-    height, width = size(mesh)
-
-    open(filename, "w") do io
-        for row ∈ 1:height, col ∈ 1:width
-
-            # Top triangle
-            top_triangle = top_triangle(mesh, row, col)
-            n = centroid(top_triangle)
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
-
-
-            # Bottom triangle
-            bot_triangle = bottom_triangle(mesh, row, col)
-            n = centroid(bot_triangle)
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
-
-
-        end
-
-        # CHECK what dims exactly represents. Number of triangles?
-        println(io, "dims $(2*mesh.width) $(2*mesh.height)")
-    end
-end
-
-
-"""
-$(SIGNATURES)
-
-TO REFACTOR.
-"""
-function stl_2_mesh(filename)
-    lines = readlines(filename)
-
-    vertexLines = [l for l in lines if startswith(l, "v")]
-    nodeList = Vector{Vertex3D}(undef, size(vertexLines))
-
-    count = 0
-    for line in vertexLines
-        count += 1
-        elements = split(line, " ")
-        x = parse(Float64, elements[2])
-        y = parse(Float64, elements[3])
-        z = parse(Float64, elements[4]) * 10
-        pt = Vertex3D(x, y, z, 0, 0)
-        nodeList[count] = pt
-    end
-
-    faceLines = [l for l in lines if startswith(l, "f")]
-    triangles = Vector{Triangle}(undef, size(faceLines))
-    for line in faceLines
-        elements = split(line, " ")
-        triangles[line] = Triangle(
-            parse(Int64, elements[2]),
-            parse(Int64, elements[3]),
-            parse(Int64, elements[4]),
-        )
-    end
-
-    dimsLines = [l for l in lines if startswith(l, "dims")]
-    elements = split(dimsLines[1], " ")
-
-    return RectangleMesh(
-        nodeList,
-        triangles,
-        parse(Int64, elements[2]),
-        parse(Int64, elements[3]),
-    )
-end
-
+find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])
 
 """
 $(SIGNATURES)
@@ -169,9 +65,11 @@ function ∇(ϕ::Matrix{Float64})
     ∇ϕᵤ = zeros(Float64, width, height)   # the right edge will be filled with zeros
     ∇ϕᵥ = zeros(Float64, width, height)   # the buttom edge will be filled with zeros
 
-    for row = 1:height, col = 1:width
-        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
-        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
+    for ci ∈ CartesianIndex(ϕ)
+        row = ci[1]
+        col = ci[2]
+        ∇ϕᵤ[ci] = ϕ[row+1, col] - ϕ[row, col]
+        ∇ϕᵥ[ci] = ϕ[row, col+1] - ϕ[row, col]
     end
 
     return ∇ϕᵤ, ∇ϕᵥ
@@ -188,7 +86,7 @@ function get_pixel_area(mesh::RectangleMesh)
 
     pixelAreas = zeros(Float64, height, width)
 
-    for row = 1:height, col = 1:width
+    for ci ∈ CartesianIndex
         #
         # *------*
         # | TOP/ |
@@ -197,9 +95,7 @@ function get_pixel_area(mesh::RectangleMesh)
         # | /BOT |
         # *------*
         #
-        pixelAreas[row, col] =
-            triangle_area(top_triangles(mesh, row, col)) +
-            triangle_area(bottom_triangle(mesh, row, col))
+        pixelAreas[ci] = area(top_triangles(mesh, ci)) + area(bottom_triangle(mesh, ci))
     end
 
     return pixelAreas
@@ -223,7 +119,7 @@ function relax!(height_map::Matrix{Float64}, divergence::Matrix{Float64})
     # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
     container = zeros(Float64, height + 2, width + 2)
 
-    container[:, :] .= val_average
+    container .= val_average
     container[2:height+1, 2:height+1] .= height_map[:, :]
 
     val_up = container[1:height, 2:width+1]
@@ -248,22 +144,15 @@ This function will take a `grid_definition x grid_definition` matrix and returns
 function matrix_to_mesh(height_map::Matrix{Float64})
     height, width = size(height_map)
 
-    mesh = RectangleMesh(height, width)
-
-    for row ∈ 1:height, col ∈ 1:width
-        mesh.vertexList[mesh.to_index(row, col)].z = height_map[row, col]
-    end
+    mesh = FaceMesh(height, width)
+    mesh.vertexList[:].z .= height_map[:]
 
     # The borders height is forced at 0.
-    for r ∈ 1:height+1
-        mesh.vertexList[mesh.to_index(r, 1)].z = 0.0
-        mesh.vertexList[mesh.to_index(r, width + 1)].z = 0.0
-    end
+    mesh.topleft[CartesianIndex(:, 1)].z .= 0.0
+    mesh.topleft[CartesianIndex(:, end)].z .= 0.0
 
-    for c ∈ 1:width+1
-        mesh.vertexList[mesh.to_index(1, c)].z = 0.0
-        mesh.vertexList[mesh.to_index(height + 1, c)].z = 0.0
-    end
+    mesh.topleft[CartesianIndex(1, :)].z .= 0.0
+    mesh.topleft[CartesianIndex(end, :)].z .= 0.0
 
     return mesh
 end
@@ -272,7 +161,7 @@ end
 """
 $(SIGNATURES)
 """
-function march_mesh!(mesh::RectangleMesh, ϕ::Matrix{Float64})
+function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
 
     height, width = size(mesh)
@@ -281,34 +170,30 @@ function march_mesh!(mesh::RectangleMesh, ϕ::Matrix{Float64})
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
-    for row ∈ 1:height, col ∈ 1:width
-        Vx = ∇ϕᵤ[x, y]
-        Vy = ∇ϕᵥ[x, y]
-
-        mesh.vertexList[mesh.to_index(row, col)].vx = -Vx
-        mesh.vertexList[mesh.to_index(row, col)].vy = -Vy
-    end
+    mesh.topleft[:, :][1].vx .= -∇ϕᵤ[:, :]
+    mesh.topleft[:, :][1].vy .= -∇ϕᵥ[:, :]
 
     # The velocity matrix was initialized with zeros everywhere. We nevertheless ovewrite them just in case...
-    mesh.rectangles[:, 1].vx .= 0.0
-    mesh.rectangles[:, end].vy = 0.0
+    mesh.topleft[:, 1].vx .= 0.0
+    mesh.topleft[:, 1].vy .= 0.0
+    mesh.topleft[:, end].vx .= 0.0
+    mesh.topleft[:, end].vy .= 0.0
 
-    mesh.rectangles[1, :].vx .= 0.0
-    mesh.rectangles[end, :].vy = 0.0
+    mesh.topleft[1, :].vx .= 0.0
+    mesh.topleft[1, :].vy .= 0.0
+    mesh.topleft[end, :].vx = 0.0
+    mesh.topleft[end, :].vy = 0.0
 
 
     # Basically infinity time to shrink a triangle to zip.
     min_t = 10_000.0
 
-    for row ∈ 1:height, col ∈ 1:width
-        top_tri = top_triangles(mesh, row, col)
-        p1 = top_tri.pt1
-        p2 = top_tri.pt2
-        p3 = top_tri.pt3
+    for ci ∈ CartesianIndices(ϕ)
+        top_tri = top_triangles3D(mesh, ci)
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested in positive times.
-        t1, t2 = find_maximum_t(p1, p2, p3)
+        t1, t2 = find_maximum_t(top_tri)
         for t ∈ [t1, t2]
             if (!ismissing(t)) && (0 < t < min_t)
                 min_t = t
@@ -316,14 +201,11 @@ function march_mesh!(mesh::RectangleMesh, ϕ::Matrix{Float64})
         end
 
 
-        bottom_tri = bottom_triangle(mesh, row, col)
-        p1 = bottom_tri.pt1
-        p2 = bottom_tri.pt2
-        p3 = bottom_tri.pt3
+        bot_tri = bot_triangle3D(mesh, ci)
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested in positive times.
-        t1, t2 = find_maximum_t(p1, p2, p3)
+        t1, t2 = find_maximum_t(bot_tri)
         for t ∈ [t1, t2]
             if (!ismissing(t)) && (0 < t < min_t)
                 min_t = t
@@ -337,13 +219,8 @@ function march_mesh!(mesh::RectangleMesh, ϕ::Matrix{Float64})
     # Modify the mesh triangles but ensuring that we are far from destroying any of them with a nil area.
     δ = min_t / 2
 
-    for row ∈ 1:height, col ∈ 1:width
-        Vx = mesh.rectangles[row, col].vx
-        Vy = mesh.rectangles[row, col].vy
-
-        mesh.rectangles[row, col].x += δ * Vx
-        mesh.rectangles[row, col].y += δ * Vy
-    end
+    mesh.topleft[:, :].x .+= δ * mesh.rectangles[:, :].vx
+    mesh.topleft[:, :].y .+= δ * mesh.rectangles[:, :].vy
 
     # saveObj(mesh, "gateau.obj")
 end
@@ -433,15 +310,7 @@ function set_heights!(
 )
     width, height = size(height_map)
 
-    for row ∈ 1:height, col ∈ 1:width
-        mesh.rectangles[row, col].z = height_map[x, y] * height_scale + height_offset
-
-        if x == 100 && y == 100
-            println(
-                "Example heights: $(height_map[x, y]) and $(height_map[x, y] * heightScale) and $(height_map[x, y] * heightScale + heightOffset)",
-            )
-        end
-    end
+    mesh.rectangles[:, :].z .= height_map[:, :] * height_scale + height_offset
 
     # Forces the borders at Height_Offset. They will never change because nil velocity.
     mesh.rectangles[1, :] .= height_offset
@@ -481,21 +350,13 @@ function create_solid(mesh, bottom_offset = Bottom_Offset / Meters_Per_Pixel)
     ###
     ### Botttom mesh
     ###
-    # Build the bottom surface
-    bottom_mesh = RectangleMesh(height, width)
-    for row = 1:height+1, col = 1:width+1
-        bottom_mesh.rectangles[row, col] = Vertex3D(row, col, -offset, 0.0, 0.0)
+    # Build the bottom surface which is prepopulated by its constructor. However, its height is incorrect.
+    bottom_mesh = FaceMesh(height, width)
+    for ci ∈ CartesianIndices(bottom_mesh)
+        row = ci[1]
+        col = ci[2]
+        bottom_mesh.topleft[ci] = Vertex3D(row, col, -Bottom_Offset, 0.0, 0.0)
     end
-
-    # List top mesh top triangles
-    list_triangles_bot_top =
-        [top_triangles(bottom_mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
-
-    # List top mesh bottom triangles
-    list_triangles_bot_bottom =
-        [bottom_triangle(bottom_mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
-
-
 
     ###
     ### Side meshes
@@ -556,44 +417,42 @@ end
 """
 $(SIGNATURES)
 """
-function find_surface(mesh, image, f = Focal_Length, picture_width = Picture_Side)
+function find_surface(
+    mesh::FaceMesh,
+    image,
+    f = Focal_Length,
+    picture_width = Caustics_Side,
+)
     height, width = size(mesh)
 
-    H = f
-    metersPerPixel = picture_width / width
-    println(metersPerPixel)
+    # H is the initial distance from the surface of the carved face to the projection screen.
+    # H is constant and does not account for the change in heights due to carving.
+    # The focal length is in meters. H is in Pixels.
+    H = f / Meters_Per_Pixel
 
     # h(eight) indexes rows, w(idth) indexes columns
     Nx = zeros(Float64, height + 1, width + 1)
     Ny = zeros(Float64, height + 1, width + 1)
 
-    for row ∈ 1:height, col ∈ 1:width
-        node = mesh.nodeArray[row, col]
-        dx = (node.ix - node.x) * metersPerPixel
-        dy = (node.iy - node.y) * metersPerPixel
+    for ci ∈ CartesianIndices(mesh.nodeArray)
+        node = mesh.nodeArray[ci]
+        dx = (node.ix - node.x)
+        dy = (node.iy - node.y)
 
-        little_h = node.z * metersPerPixel
-        H_minus_h = H - little_h
-        dz = H_minus_h
+        true_H = H - node.z
 
-        # k = η * sqrt(dx * dx + dy * dy + H_minus_h * H_minus_h) - H_minus_h
-        Nx[row, col] = tan(atan(dx / dz) / (n₁ - n₂))
-        Ny[row, col] = tan(atan(dy / dz) / (n₁ - n₂))
+        Nx[ci] = tan(atan(dx / true_H) / (n₁ - n₂))
+        Ny[ci] = tan(atan(dy / true_H) / (n₁ - n₂))
     end
-
 
     # We need to find the divergence of the Vector field described by Nx and Ny
     divergence = zeros(Float64, width, height)
+    δr = zeros(Float64, width, height)
+    δc = zeros(Float64, width, height)
 
-    for row ∈ 1:height, col ∈ 1:width
-        δx = Nx[row+1, col] - Nx[row, col]
-        δy = Ny[row, col+1] - Ny[row, col]
-        divergence[row, col] = δx + δy
-
-        (row % 100 == 0) &&
-            (col % 100 == 0) &&
-            println("div[$(row), $(col)]: $(divergence[row, col])")
-    end
+    δr[:, :] .= Nx[2:end, 1:end-1] .- Nx[1:end-1, 1:end-1]
+    δc[:, :] .= Nx[1:end-1, 2:end] .- Ny[1:end-1, 1:end-1]
+    divergence = δx + δy
     println("Have all the divergences")
 
     height_map = zeros(Float64, height, width)
@@ -609,7 +468,7 @@ function find_surface(mesh, image, f = Focal_Length, picture_width = Picture_Sid
     end
 
     # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
-    return height_map, metersPerPixel
+    return height_map
 end
 
 
@@ -625,16 +484,15 @@ function engineer_caustics(img)
 
     # meshy is the same size as the image with an extra row/column to have coordinates to
     # cover each image pixel with a triangle.
-    mesh = RectangleMesh(width + 1, height + 1)
+    mesh = FaceMesh(width, height)
 
     # We need to boost the brightness of the image so that its sum and the sum of the area are equal
-    mesh_sum = width * height
     image_sum = sum(img2)
-    boost_ratio = mesh_sum / image_sum
+    average_intensity = image_sum / (width * height)
 
     # img3 is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
     # original image.
-    img3 = img2 .* boost_ratio
+    img3 = img2 ./ average_intensity
 
     single_iteration!(mesh, img3, "it1")
     single_iteration!(mesh, img3, "it2")
@@ -645,7 +503,7 @@ function engineer_caustics(img)
     # single_teration(meshy, img3, "it6")
 
 
-    h, metersPerPixel = find_surface(mesh, img3, 1.0, Artifact_Size)
+    h = find_surface(mesh, img3, 1.0, Artifact_Size)
 
     set_heights!(mesh, h)
 
