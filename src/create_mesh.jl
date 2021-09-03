@@ -4,6 +4,7 @@ $(SIGNATURES)
 Given 3 points and their velocities, calculate the time `t` required to bring the area of that triangle to zero
 """
 function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
+    # Three points A, B and C, with coordinates (x, y)
     # The area of a triangle is 1/2 * [ Ax (By - Cy) + Bx (Cy - Ay) + Cx (Ay - By)]
     # where each point of the triangle is where it will be after time t
     # i.e. a point goes from P to P+tV where V is the velocity of that point.
@@ -25,9 +26,9 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
     # (Bx + t_vBx) (Cy + t_vCy )- (Cx + t_vCx) (By + t_vBy) = 0.
     # After expansion and reshuffling to have a quadratic equation where t
     # is the variable, the coefficients of that equation are:
-    a = t_vBy * t_vCx - t_vCy * t_vBx
-    b = By * t_vCx + Cx * t_vBy - (Bx * t_vCy + Cy * t_vBx)
-    c = Cx * By - Bx * Cy
+    a = t_vCy * t_vBx - t_vBy * t_vCx
+    b = -By * t_vCx - Cx * t_vBy + Bx * t_vCy + Cy * t_vBx
+    c = Bx * Cy - Cx * By
 
     # if a = 0, this is just a linear equation.
     if a == 0
@@ -87,14 +88,6 @@ function get_pixel_area(mesh::FaceMesh)
     pixelAreas = zeros(Float64, size(mesh))
 
     for ci ∈ CartesianIndices(pixelAreas)
-        #
-        # *------*
-        # | TOP/ |
-        # |   /  |
-        # |  /   |
-        # | /BOT |
-        # *------*
-        #
         pixelAreas[ci] =
             area(top_triangle3D(mesh, ci)...) + area(bot_triangle3D(mesh, ci)...)
     end
@@ -199,7 +192,7 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     end
 
     # Basically infinity time to shrink a triangle to zip.
-    min_t = 10_000.0
+    min_t = 1.0
 
     for ci ∈ CartesianIndices(ϕ)
         top_tri = top_triangle3D(mesh, ci)
@@ -246,18 +239,14 @@ $(SIGNATURES)
 """
 function quantifyLoss!(D, suffix, img)
     println("Loss:")
-    println("\tMinimum: $(minimum(D))")
-    println("\tMaximum: $(maximum(D))")
+    println("\tMinimum loss: $(minimum(D))")
+    println("\tMaximum loss: $(maximum(D))")
 
     blue = zeros(size(D))
     blue[D.>0] = D[D.>0]
     red = zeros(size(D))
     red[D.<0] = -D[D.<0]
     green = zeros(size(D))
-
-    println(size(blue))
-    println(size(red))
-    println(size(green))
 
     rgbImg = RGB.(red, green, blue)'
     save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
@@ -281,8 +270,6 @@ function single_iteration!(mesh, image, suffix)
     D = Float64.(LJ - image)
 
     # Save the loss image as a png
-    println(minimum(D))
-    println(maximum(D))
     quantifyLoss!(D, suffix, image)
 
     width, height = size(image)
@@ -298,7 +285,8 @@ function single_iteration!(mesh, image, suffix)
 
         old_max_update = max_update
         max_update = relax!(ϕ, D)
-        if max_update < 1e-6 || abs((max_update - old_max_update) / old_max_update) < 0.01
+        if abs(max_update) < 1e-6 ||
+           abs((max_update - old_max_update) / old_max_update) < 0.01
             println(
                 "Convergence stopped at step $(interaction_count) with max_update of $(max_update)",
             )
@@ -318,6 +306,8 @@ function single_iteration!(mesh, image, suffix)
     # Now we need to march the x,y locations in our mesh according to this gradient!
     march_mesh!(mesh, ϕ)
     save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
+
+    return max_update
 end
 
 
@@ -502,7 +492,8 @@ function find_surface(
 
         old_max_update = max_update
         max_update = relax!(height_map, divergence)
-        if max_update < 1e-6 || abs((max_update - old_max_update) / old_max_update) < 0.01
+        if abs(max_update) < 1e-6 ||
+           abs((max_update - old_max_update) / old_max_update) < 0.01
             println(
                 "Convergence stopped improving at step $(iteration_count) with max_update of $(max_update)",
             )
@@ -534,18 +525,15 @@ function engineer_caustics(source_image)
     # We need to boost the brightness of the image so that its sum and the sum of the area are equal
     average_intensity = sum(imageBW) / (width * height)
 
-    # img3 is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
+    # imageBW is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
     # original image.
     imageBW = imageBW ./ average_intensity
 
-    single_iteration!(mesh, imageBW, "it1")
-    single_iteration!(mesh, imageBW, "it2")
-    single_iteration!(mesh, imageBW, "it3")
-
-    # single_teration(meshy, imageBW, "it4")
-    # single_teration(meshy, imageBW, "it5")
-    # single_teration(meshy, imageBW, "it6")
-
+    for i ∈ 1:5
+        println("\nSTARTING ITERATION $(i) \t--------------------------------------- ")
+        max_update = single_iteration!(mesh, imageBW, "it$(i)")
+        println("---------- ITERATION $(i): $(max_update)")
+    end
 
     height_map = find_surface(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
 

@@ -1,8 +1,9 @@
 module CausticsEngineering
 
 using DocStringExtensions
+using Meshes, Images
 
-using Meshes, Images, Plots
+using Plots
 gr()
 
 include("parameters.jl")
@@ -33,4 +34,4 @@ main()
 
 export FaceMesh, main, engineer_caustics
 
-end
+end # End module

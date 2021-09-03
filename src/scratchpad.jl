@@ -1,4 +1,4 @@
-using Revise
+using Revise, Debugger
 
 using Images
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
@@ -9,6 +9,31 @@ mesh, image_caustics = engineer_caustics(image);
 Gray.(image_caustics')
 
 
+using Test
+
+
+
+
+
+t3 = (
+    CausticsEngineering.Vertex3D(5.0, 5.0, 0.01, 0.1, -2.0),
+    CausticsEngineering.Vertex3D(6.0, 5.0, 0.01, 0.1, 2.0),
+    CausticsEngineering.Vertex3D(5.5, 5.5, 0.01, 0.5, -3.0),
+)
+
+CausticsEngineering.find_maximum_t(t3)
+
+
+
+
+
+
+
+
+
+
+
+
 typeof(CartesianIndex(3, 5)[1])
 
 t = Matrix{Tuple{CartesianIndex(2),CartesianIndex(2),CartesianIndex(2)}}(undef, 2, 2)
@@ -16,12 +41,12 @@ t = Matrix{Tuple{CartesianIndex(2),CartesianIndex(2),CartesianIndex(2)}}(undef, 
 t[1, 1] = (CartesianIndex(1, 1), CartesianIndex(2, 1), CartesianIndex(1, 2))
 typeof((CartesianIndex(1, 1), CartesianIndex(2, 1), CartesianIndex(1, 2)))
 
-f = FaceMesh(5, 5);
 
 f.toptriangles[CartesianIndex(5, 5)]
 
-f.topleft
-
+f = FaceMesh(5, 5);
+v3 = CausticsEngineering.top_triangle3D(f, CartesianIndex(5, 5))
+CausticsEngineering.find_maximum_t(v3)
 
 v3 = CausticsEngineering.top_triangle3D(f, CartesianIndex(5, 5))
 CausticsEngineering.area(v3...)
