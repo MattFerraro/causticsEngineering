@@ -1,5 +1,25 @@
 using FileIO, MeshIO
 
+
+"""
+$(SIGNATURES)
+
+"""
+function convert(::Meshes.SimpleMesh, mesh::FaceMesh)
+    height, width = size(mesh)
+
+    points = Meshes.Point3.([mesh.topleft[ci] for ci ∈ CartesianIndices(mesh.topleft)])
+
+    top_connections =
+        [connect(mesh.toptriangles[ci]) for ci ∈ CartesianIndices(mesh.topleft)]
+    bot_connections =
+        [connect(mesh.bottriangles[ci]) for ci ∈ CartesianIndices(mesh.topleft)]
+
+    return SimpleMesh(points, vcat(top_connections, bot_connections))
+end
+
+
+
 """
 $(SIGNATURES)
 
@@ -16,14 +36,14 @@ function save_stl!(
     flipxy = false,
 )
 
+    return
+
     height, width = size(mesh)
 
     open(filename, "w") do io
-
         println(io, "solid engineered_caustics")
 
         for row ∈ 1:height, col ∈ 1:width
-
             # Top triangle
             top_triangle = top_triangle(mesh, row, col)
             n = centroid(top_triangle)
@@ -40,7 +60,6 @@ function save_stl!(
                 println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
 
-
             # Bottom triangle
             bot_triangle = bottom_triangle(mesh, row, col)
             n = centroid(bot_triangle)
@@ -56,8 +75,6 @@ function save_stl!(
             else
                 println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
             end
-
-
         end
 
         # CHECK what dims exactly represents. Number of triangles?

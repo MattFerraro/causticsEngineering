@@ -1,3 +1,5 @@
+using StaticArrays
+
 """
 $(TYPEDEF)
 
@@ -19,6 +21,7 @@ mutable struct Vertex3D
     vx::Float64
     vy::Float64
 
+    Vertex3D(x, y, z, vx, vy) = new(x, y, z, vx, vy)
     Vertex3D() = new(0.0, 0.0, Height_Offset, 0.0, 0.0)
 end
 
@@ -36,10 +39,15 @@ end
 """
 $(SIGNATURES)
 """
-function dist(p1::Vec3f, p2::Vec3f)
-    v = p2 .- p1
-    return sqrt(sum(v .^ 2))
+function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
+    a = dist(v1, v2)
+    b = dist(v2, v3)
+    c = dist(v3, v1)
+    s = (a + b + c) / 2.0
+
+    return sqrt(s * (s - a) * (s - b) * (s - c))
 end
+
 
 """
 $(SIGNATURES)
@@ -91,53 +99,64 @@ Rectangle = Nothing
 $(TYPEDEF)
 """
 struct FaceMesh
-    size::Tuple{UInt,UInt}
+    size::Tuple{Int,Int}
     topleft::AbstractMatrix{Vertex3D}
-    toptriangles::AbstractMatrix{Tuple{UInt,UInt,UInt}}
-    bottriangles::AbstractMatrix{Tuple{UInt,UInt,UInt}}
+    toptriangles::AbstractMatrix{Tuple{CartesianIndex,CartesianIndex,CartesianIndex}}
+    bottriangles::AbstractMatrix{Tuple{CartesianIndex,CartesianIndex,CartesianIndex}}
 
     as_index::Function
 
-    function FaceMesh(height::Int, width::Int)
-
-        function as_index(r, c)
-            if 1 <= r <= height + 1 && 1 <= c <= width
-                return r + (c - 1) * (width + 1)
-            else
-                return nothing
-            end
-        end
-
-        m_topleft = Matrix{Vertex3D}(undef, height, width)
-        t_triangles = Matrix{Tuple{UInt,UInt,UInt}}(undef, height, width)
-        b_triangles = Matrix{Tuple{UInt,UInt,UInt}}(undef, height, width)
-        for ci ∈ CartesianIndices(m_topleft)
-            row = ci[1]
-            col = ci[2]
-
-            m_topleft .= (row, col, Top_Offset, 0.0, 0.0)
-
-            t_triangles[ci] =
-                (as_index(row, col), as_index(row + 1, col), as_index(row, col + 1))
-            b_triangles[ci] =
-                (as_index(row, col + 1), as_index(row + 1, col), as_index(row + 1, col + 1))
-        end
-
-        return new((height, width), m_topleft, t_triangles, b_triangles)
-    end
+    FaceMesh(s, tl, tt, bt) = new(s, tl, tt, bt)
 end
 
-function convert(Meshes.SimpleMesh, mesh::FaceMesh)
-    height, width = size(mesh)
+function FaceMesh(height::Int, width::Int)
 
-    points = Meshes.Point3.([mesh.topleft[ci] for ci ∈ CartesianIndices(mesh.topleft)])
+    function as_index(r, c)
+        # Adding "+ 1" since it is the size of the `topleft` matrix
+        if 1 <= r <= height + 1 && 1 <= c <= width + 1
+            return r + (c - 1) * (width + 1)
+        else
+            return nothing
+        end
+    end
+    as_index(ci::CartesianIndex) = as_index(ci[1], ci[2])
 
-    top_connections =
-        [connect(mesh.toptriangles[ci]) for ci ∈ CartesianIndices(mesh.topleft)]
-    bot_connections =
-        [connect(mesh.bottriangles[ci]) for ci ∈ CartesianIndices(mesh.topleft)]
+    m_topleft = Matrix{Vertex3D}(undef, height + 1, width + 1)
+    t_triangles = Matrix{Tuple{CartesianIndex{2},CartesianIndex{2},CartesianIndex{2}}}(
+        undef,
+        height,
+        width,
+    )
+    b_triangles = Matrix{Tuple{CartesianIndex{2},CartesianIndex{2},CartesianIndex{2}}}(
+        undef,
+        height,
+        width,
+    )
 
-    return SimpleMesh(points, vcat(top_connections, bot_connections))
+
+    for ci ∈ CartesianIndices(m_topleft)
+        row = ci[1]
+        col = ci[2]
+        m_topleft[ci] = Vertex3D(row, col, Top_Offset, 0.0, 0.0)
+    end
+
+    for ci ∈ CartesianIndices(t_triangles)
+        row = ci[1]
+        col = ci[2]
+
+        t_triangles[ci] = (
+            CartesianIndex(row, col),
+            CartesianIndex(row + 1, col),
+            CartesianIndex(row, col + 1),
+        )
+        b_triangles[ci] = (
+            CartesianIndex(row, col + 1),
+            CartesianIndex(row + 1, col),
+            CartesianIndex(row + 1, col + 1),
+        )
+    end
+
+    return FaceMesh((height, width), m_topleft, t_triangles, b_triangles)
 end
 
 
@@ -146,7 +165,7 @@ $(TYPEDEF)
 """
 struct Triangle
     mesh::FaceMesh
-    points::Tuple{UInt,UInt,UInt}
+    points::Tuple{Int,Int,Int}
 
     function Triangle(mesh::FaceMesh)
         return Triangle(
@@ -157,25 +176,13 @@ struct Triangle
 end
 
 
-"""
-$(SIGNATURES)
-"""
-function area(p1::Vec3f, p2::Vec3f, p3::Vec3f)
-    a = dist(p1, p2)
-    b = dist(p2, p3)
-    c = dist(p3, p1)
-    s = (a + b + c) / 2.0
-
-    return sqrt(s * (s - a) * (s - b) * (s - c))
-end
-
 
 """
 $(SIGNATURES)
 
 Return the dimension of the mesh as the number of rectangles. It does not return the number of corner points.
 """
-base.size(mesh::FaceMesh) = mesh.size
+Base.size(mesh::FaceMesh) = mesh.size
 
 
 """
@@ -183,9 +190,9 @@ $(SIGNATURES)
 
 Converts a triangle as a triplet of references to mesh vertices to a triplet of 3D coordinates.
 """
-function top_triangle3D(mesh::Mesh, ci::CartesianIndex)
-    if ci ∈ CartesianIndices(mesh.topleft)
-        t = mesh.top_triangle[ci]
+function top_triangle3D(mesh::FaceMesh, ci::CartesianIndex)
+    if ci ∈ CartesianIndices(mesh.toptriangles)
+        t = mesh.toptriangles[ci]
         p1 = mesh.topleft[t[1]]
         p2 = mesh.topleft[t[2]]
         p3 = mesh.topleft[t[3]]
@@ -195,12 +202,12 @@ function top_triangle3D(mesh::Mesh, ci::CartesianIndex)
     end
 end
 
-top_triangle3D(mesh::Mesh, row::UInt, width::UInt) =
+top_triangle3D(mesh::FaceMesh, row::Int, width::Int) =
     top_triangle3D(mesh, CartesianIndex(row, col))
 
-function bot_triangle3D(mesh::Mesh, ci::CartesianIndex)
-    if ci ∈ CartesianIndices(mesh.topleft)
-        t = mesh.bot_triangle[ci]
+function bot_triangle3D(mesh::FaceMesh, ci::CartesianIndex)
+    if ci ∈ CartesianIndices(mesh.bottriangles)
+        t = mesh.bottriangles[ci]
         p1 = mesh.topleft[t[1]]
         p2 = mesh.topleft[t[2]]
         p3 = mesh.topleft[t[3]]
@@ -210,10 +217,11 @@ function bot_triangle3D(mesh::Mesh, ci::CartesianIndex)
     end
 end
 
-bot_triangle3D(mesh::Mesh, row::UInt, width::UInt) =
+bot_triangle3D(mesh::FaceMesh, row::Int, width::Int) =
     bot_triangle3D(mesh, CartesianIndex(row, col))
 
-function triangle3D(mesh::Mesh, ci::CartesianIndex; side = Union{:top,:bottom})
+
+function triangle3D(mesh::FaceMesh, ci::CartesianIndex; side = Union{:top,:bottom})
     if side == :top
         return top_triangle3D(mesh, ci)
     elseif side == :bottom
@@ -223,18 +231,18 @@ function triangle3D(mesh::Mesh, ci::CartesianIndex; side = Union{:top,:bottom})
     end
 end
 
-triangle3D(mesh::Mesh, row::Uint, col::UInt; side = Union{:top,:bottom}) =
+triangle3D(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom}) =
     triangle3D(mesh, CartesianIndex(row, col); side)
 
 
 """
 $(SIGNATURES)
 """
-function centroid(mesh::Mesh, ci::CartesianIndex; side = Union{:top,:bottom})
+function centroid(mesh::FaceMesh, ci::CartesianIndex; side = Union{:top,:bottom})
     if side == :top
-        return centroid(top_triangle3D(mesh, row, col)...)
+        return centroid(top_triangle3D(mesh, ci)...)
     elseif side == :bottom
-        return centroid(bot_triangle3D(mesh, row, col)...)
+        return centroid(bot_triangle3D(mesh, ci)...)
     else
         return missing
     end
@@ -244,7 +252,7 @@ end
 """
 $(SIGNATURES)
 """
-function area(mesh::Mesh, ci::CartesianIndex; side = Union{:top,:bottom})
+function area(mesh::FaceMesh, ci::CartesianIndex; side = Union{:top,:bottom})
     if side == :top
         return area(top_triangle3D(mesh, ci)...)
     elseif side == :bottom

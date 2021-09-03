@@ -33,4 +33,4 @@ global Meters_Per_Pixel = Caustics_Height / N_Pixel_Height
 
 # calculation
 const ω = 2 / (1 + π / sqrt(N_Pixel_Height * N_Pixel_Width))
-global n_iterations_convergence = 10_000        # CHECK: What is a reasonable number of iterations?
+const N_Iterations_Convergence = 10_000        # CHECK: What is a reasonable number of iterations?
