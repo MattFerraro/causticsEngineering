@@ -1,58 +1,8 @@
-
-"""
-$(SIGNATURES)
-"""
-function ∇(ϕ::Matrix{Float64})
-    height, width = size(ϕ)
-
-    ∇ϕᵤ = zeros(Float64, height, width)   # the right edge will be filled with zeros
-    ∇ϕᵥ = zeros(Float64, height, width)   # the buttom edge will be filled with zeros
-
-    for row ∈ 1:height-1, col ∈ 1:width-1
-        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
-        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
-    end
-
-    ∇ϕᵤ[1:end, end] .= 0.0
-    ∇ϕᵤ[end, 1:end] .= 0.0
-
-    ∇ϕᵥ[1:end, end] .= 0.0
-    ∇ϕᵥ[end, 1:end] .= 0.0
-
-    return ∇ϕᵤ, ∇ϕᵥ
-end
-
-
-"""
-$(SIGNATURES)
-
-This function will take a `grid_definition x grid_definition` matrix and returns a
-`grid_definition x grid_definition` mesh.
-
-"""
-function matrix_to_mesh(height_map::Matrix{Float64})
-    height, width = size(height_map)
-
-    mesh = FaceMesh(height, width)
-
-    # 1 more topleft than pixels! Therefore compiler needs to specify exact indices.
-    mesh.topleft.z[1:height, 1:width] .= height_map[1:height, 1:width]
-
-    # The borders' height is forced at 0.
-    fill_borders!(mesh.topleft.z, 0.0)
-
-    return mesh
-end
-
-
-
-
 """
 $(SIGNATURES)
 """
 function engineer_caustics(source_image)
     imageBW = Float64.(Gray.(source_image))
-    imageBW = permutedims(imageBW)
 
     width, height = size(imageBW)
     println("Image size: $((height, width))")
@@ -60,6 +10,8 @@ function engineer_caustics(source_image)
     # meshy is the same size as the image with an extra row/column to have coordinates to
     # cover each image pixel with a triangle.
     mesh = FaceMesh(height, width)
+    print("Mesh creation: ")
+    println("$(mesh.topleft.vx[15, 5]) , $(mesh.topleft.vy[15, 5])")
 
     # We need to boost the brightness of the image so that its sum and the sum of the area are equal
     average_intensity = sum(imageBW) / (width * height)
@@ -71,12 +23,20 @@ function engineer_caustics(source_image)
     for i ∈ 1:2
         println("\nSTARTING ITERATION $(i) ---")
         max_update = single_iteration!(mesh, imageBW, "it$(i)")
+        print("Single iteration: ")
+        println("$(mesh.topleft.vx[15, 5]) , $(mesh.topleft.vy[15, 5])")
+
         println("---------- ITERATION $(i): $(max_update)")
     end
 
     height_map = find_surface(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
+    print("Find surface: ")
+    println("$(mesh.topleft.vx[15, 5]) , $(mesh.topleft.vy[15, 5])")
 
     set_heights!(mesh, height_map)
+    print("Set heights!: ")
+    println("$(mesh.topleft.vx[15, 5]) , $(mesh.topleft.vy[15, 5])")
+
 
     # solidMesh = create_solid(mesh)
     # save_stl!(
@@ -97,14 +57,17 @@ $(SIGNATURES)
 function single_iteration!(mesh, image, suffix)
     # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
+
+    # DOES NOT WORK. D IS ALWAYS IDENTICAL
     LJ = get_area_pixels(mesh)
     D = Float64.(LJ - image)
 
     # Save the loss image as a png
     plot_loss!(D, suffix, image)
 
-    # ϕ is the heightmap
-    ϕ = zeros(Float64, size(image))
+    # ϕ is the _heightmap_
+    # ϕ = zeros(Float64, size(image))
+    height_map = rand(Float64, size(image)) ./ 1_000 .- 0.5 / 1_000
 
     max_update = 100.0
     interaction_count = 0
@@ -113,7 +76,7 @@ function single_iteration!(mesh, image, suffix)
         interaction_count % 500 == 0 && println("Converging for intensity: $(max_update)")
 
         old_max_update = max_update
-        max_update = relax!(ϕ, D)
+        max_update = relax!(height_map, D)
         if abs(max_update) < 1e-6 ||
            abs((max_update - old_max_update) / old_max_update) < 0.01
             println(
@@ -124,7 +87,7 @@ function single_iteration!(mesh, image, suffix)
     end
 
     save_stl!(
-        matrix_to_mesh(ϕ * 0.02),
+        matrix_to_mesh(height_map * 0.02),
         "./examples/phi_$(suffix).obj",
         reverse = false,
         flipxy = true,
@@ -133,7 +96,7 @@ function single_iteration!(mesh, image, suffix)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
-    march_mesh!(mesh, ϕ)
+    march_mesh!(mesh, height_map)
     save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
 
     return max_update
@@ -150,7 +113,7 @@ function find_surface(
     picture_width = Caustics_Side,
 )
 
-    # h(eight) indexes rows, w(idth) indexes columns
+    # height indexes rows, width indexes columns
     height, width = size(mesh)
 
     # Coordinates difference
@@ -266,8 +229,8 @@ $(SIGNATURES)
 """
 function quantifyLoss!(D, suffix, img)
     println("Loss:")
-    println("Minimum: $(minimum(D))")
-    println("Maximum: $(maximum(D))")
+    println("\tMinimum loss: $(minimum(D))")
+    println("\tMaximum loss: $(maximum(D))")
 
     blue = zeros(size(D))
     blue[D.>0] = D[D.>0]
@@ -327,7 +290,9 @@ function relax!(height_map::Matrix{Float64}, divergence::Matrix{Float64})
     height_map = height_map + ω .* (target_map - height_map)
 
     max_update = maximum(abs.(height_map))
-    # println("\t\tMax update = $(target_map)")
+    println("Minimum / Maximum of the height map after relaxation.")
+    println("\tMax update = $( maximum(height_map) )")
+    println("\tMin update = $( minimum(height_map) )")
 
     return max_update
 end
@@ -392,9 +357,17 @@ find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2]
 
 """
 $(SIGNATURES)
+
+ϕ is the height map.
+
+`march_mesh!` flexes the mesh
 """
 function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
+
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
+    println("Min/Max of values of ϕ: $(minimum(ϕ)) / $(maximum(ϕ))")
+    println("Sum of values of ∇ϕᵤ:   $( sum(∇ϕᵤ) )")
+    println("Sum of values of ∇ϕᵥ:   $( sum(∇ϕᵥ) )")
 
     height, width = size(ϕ)
 
@@ -402,6 +375,7 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
+    # Warning: The indices are necessary because topleft and ∇ϕ are of different sizes
     mesh.topleft.vx[1:height, 1:width] .= -∇ϕᵤ[1:height, 1:width]
     mesh.topleft.vy[1:height, 1:width] .= -∇ϕᵥ[1:height, 1:width]
 
@@ -410,7 +384,8 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     fill_borders!(mesh.topleft.vy, 0.0)
 
     # Basically infinity time to shrink a triangle to zip.
-    min_t = 1.0
+    min_positive_t = Inf
+    max_negative_t = -Inf
 
     for row ∈ 1:height-1, col ∈ 1:width-1
         top_tri = top_triangle3D(mesh, row, col)
@@ -419,11 +394,13 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
         # We are only interested in positive times.
         t1, t2 = find_maximum_t(top_tri)
         for t ∈ [t1, t2]
-            if (!ismissing(t)) && (0 < t < min_t)
-                min_t = t
+            if (!ismissing(t)) && (0 < t < min_positive_t)
+                min_positive_t = t
+            end
+            if (!ismissing(t)) && (max_negative_t < t < 0)
+                max_negative_t = t
             end
         end
-
 
         bot_tri = bot_triangle3D(mesh, row, col)
 
@@ -431,20 +408,26 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
         # We are only interested in positive times.
         t1, t2 = find_maximum_t(bot_tri)
         for t ∈ [t1, t2]
-            if (!ismissing(t)) && (0 < t < min_t)
-                min_t = t
+            if (!ismissing(t)) && (0 < t < min_positive_t)
+                min_positive_t = t
+            end
+            if (!ismissing(t)) && (max_negative_t < t < 0)
+                max_negative_t = t
             end
         end
-
     end
 
-    println("Overall min_t:", min_t)
-
     # Modify the mesh triangles but ensuring that we are far from destroying any of them with a nil area.
-    δ = min_t / 2
+    # Use the maximum change possible (negative or positive)
+    δ = (abs(max_negative_t) < min_positive_t) ? min_positive_t / 2.0 : max_negative_t / 2.0
 
-    mesh.topleft.x[:] .+= δ * mesh.topleft.vx[:]
-    mesh.topleft.y[:] .+= δ * mesh.topleft.vy[:]
+    println("Overall maximum variations:")
+    println("\tOverall min_positive_t: $(min_positive_t)")
+    println("\tOverall max_negative_t: $(max_negative_t)")
+    println("\tUsing δ: $(δ)")
+
+    mesh.topleft.x[1:height, 1:width] .-= δ .* ∇ϕᵤ[1:height, 1:width]
+    mesh.topleft.y[1:height, 1:width] .-= δ .* ∇ϕᵥ[1:height, 1:width]
 
     # saveObj(mesh, "gateau.obj")
 end
@@ -550,4 +533,52 @@ function create_solid(
     end
 
     return RectangleMesh(nodeList, nodeArrarowBottom, triangles, width, height)
+end
+
+
+
+
+"""
+$(SIGNATURES)
+"""
+function ∇(ϕ::Matrix{Float64})
+    height, width = size(ϕ)
+
+    ∇ϕᵤ = zeros(Float64, height, width)   # the right edge will be filled with zeros
+    ∇ϕᵥ = zeros(Float64, height, width)   # the bottom edge will be filled with zeros
+
+    for row ∈ 1:height-1, col ∈ 1:width-1
+        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
+        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
+    end
+
+    ∇ϕᵤ[1:end, end] .= 0.0
+    ∇ϕᵤ[end, 1:end] .= 0.0
+
+    ∇ϕᵥ[1:end, end] .= 0.0
+    ∇ϕᵥ[end, 1:end] .= 0.0
+
+    return ∇ϕᵤ, ∇ϕᵥ
+end
+
+
+"""
+$(SIGNATURES)
+
+This function will take a `grid_definition x grid_definition` matrix and returns a
+`grid_definition x grid_definition` mesh.
+
+"""
+function matrix_to_mesh(height_map::Matrix{Float64})
+    height, width = size(height_map)
+
+    mesh = FaceMesh(height, width)
+
+    # 1 more topleft than pixels! Therefore compiler needs to specify exact indices.
+    mesh.topleft.z[1:height, 1:width] .= height_map[1:height, 1:width]
+
+    # The borders' height is forced at 0.
+    fill_borders!(mesh.topleft.z, 0.0)
+
+    return mesh
 end

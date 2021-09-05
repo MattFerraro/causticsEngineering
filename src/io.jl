@@ -26,6 +26,8 @@ $(SIGNATURES)
 This function saves the mesh object in stl format.
 
 The format difinition is sourced from [https://en.wikipedia.org/wiki/STL_(file_format)]().
+
+TO REFACTOR.
 """
 function save_stl!(
     mesh::FaceMesh,

@@ -90,6 +90,17 @@ centroid(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D) = Vertex3D(
 
 
 """
+$(SIGNATURES)
+"""
+function fill_borders!(mat::AbstractMatrix{T}, val::T) where {T}
+    mat[begin:end, begin] .= val
+    mat[begin:end, end] .= val
+    mat[begin, begin:end] .= val
+    mat[end, begin:end] .= val
+end
+
+
+"""
 $(TYPEDEF)
 
 ## Coordinates
@@ -104,7 +115,7 @@ Velocity vector along `x` and `y` (velocity along z not necessary).
 Implementation is a struc of arrays. Easier to vectorise.
 
 """
-struct FieldVertex3D
+mutable struct FieldVertex3D
     size::Tuple{Int,Int}
 
     x::AbstractMatrix{Float64}
@@ -115,12 +126,19 @@ struct FieldVertex3D
     vy::AbstractMatrix{Float64}
 
     function FieldVertex3D(height, width)
-        mx = zeros(Float64, height + 1, width + 1)
-        my = zeros(Float64, height + 1, width + 1)
-        mz = zeros(Float64, height + 1, width + 1)
+        # mx = zeros(Float64, height + 1, width + 1)
+        # my = zeros(Float64, height + 1, width + 1)
+        # mz = zeros(Float64, height + 1, width + 1)
 
-        mvx = zeros(Float64, height + 1, width + 1)
-        mvy = zeros(Float64, height + 1, width + 1)
+        # mvx = zeros(Float64, height + 1, width + 1)
+        # mvy = zeros(Float64, height + 1, width + 1)
+
+        mx = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        my = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        mz = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+
+        mvx = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        mvy = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
 
         new((height, width), mx, my, mz, mvx, mvy)
     end
@@ -229,14 +247,6 @@ struct Triangle
             Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)),
         )
     end
-end
-
-
-function fill_borders!(mat::AbstractMatrix{T}, val::T) where {T}
-    mat[begin:end, begin] .= val
-    mat[begin:end, end] .= val
-    mat[begin, begin:end] .= val
-    mat[end, begin:end] .= val
 end
 
 

@@ -6,15 +6,10 @@ image = Images.load("./examples/cat_posing.jpg"); # Check current working direct
 using CausticsEngineering
 mesh, image_caustics = engineer_caustics(image);
 
-Gray.(image_caustics')
-
-
+Gray.(image_caustics)
+Gray.(Float64.(Gray.(image)) - image_caustics)
 
 using Test
-
-
-
-
 
 t3 = (
     CausticsEngineering.Vertex3D(5.0, 5.0, 0.01, 0.1, -2.0),
@@ -22,18 +17,7 @@ t3 = (
     CausticsEngineering.Vertex3D(5.5, 5.5, 0.01, 0.5, -3.0),
 )
 
-C
-austicsEngineering.find_maximum_t(t3)
-
-
-
-
-
-
-
-
-
-
+CausticsEngineering.find_maximum_t(t3)
 
 
 typeof(CartesianIndex(3, 5)[1])
