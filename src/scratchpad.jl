@@ -9,6 +9,7 @@ mesh, image_caustics = engineer_caustics(image);
 Gray.(image_caustics')
 
 
+
 using Test
 
 
@@ -21,7 +22,8 @@ t3 = (
     CausticsEngineering.Vertex3D(5.5, 5.5, 0.01, 0.5, -3.0),
 )
 
-CausticsEngineering.find_maximum_t(t3)
+C
+austicsEngineering.find_maximum_t(t3)
 
 
 
@@ -67,3 +69,18 @@ c = t[1]
 f.topleft(c)
 
 t = CausticsEngineering.top_triangle3D(f, CartesianIndex(1, 1))
+
+
+
+# Indexing structs
+struct TT
+    a::Int
+    b::Int
+end
+
+using StructArrays
+
+
+aa = StructArrays()
+
+aa[:].a = 0

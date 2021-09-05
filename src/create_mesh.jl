@@ -1,3 +1,338 @@
+
+"""
+$(SIGNATURES)
+"""
+function ∇(ϕ::Matrix{Float64})
+    height, width = size(ϕ)
+
+    ∇ϕᵤ = zeros(Float64, height, width)   # the right edge will be filled with zeros
+    ∇ϕᵥ = zeros(Float64, height, width)   # the buttom edge will be filled with zeros
+
+    for row ∈ 1:height-1, col ∈ 1:width-1
+        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
+        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
+    end
+
+    ∇ϕᵤ[1:end, end] .= 0.0
+    ∇ϕᵤ[end, 1:end] .= 0.0
+
+    ∇ϕᵥ[1:end, end] .= 0.0
+    ∇ϕᵥ[end, 1:end] .= 0.0
+
+    return ∇ϕᵤ, ∇ϕᵥ
+end
+
+
+"""
+$(SIGNATURES)
+
+This function will take a `grid_definition x grid_definition` matrix and returns a
+`grid_definition x grid_definition` mesh.
+
+"""
+function matrix_to_mesh(height_map::Matrix{Float64})
+    height, width = size(height_map)
+
+    mesh = FaceMesh(height, width)
+
+    # 1 more topleft than pixels! Therefore compiler needs to specify exact indices.
+    mesh.topleft.z[1:height, 1:width] .= height_map[1:height, 1:width]
+
+    # The borders' height is forced at 0.
+    fill_borders!(mesh.topleft.z, 0.0)
+
+    return mesh
+end
+
+
+
+
+"""
+$(SIGNATURES)
+"""
+function engineer_caustics(source_image)
+    imageBW = Float64.(Gray.(source_image))
+    imageBW = permutedims(imageBW)
+
+    width, height = size(imageBW)
+    println("Image size: $((height, width))")
+
+    # meshy is the same size as the image with an extra row/column to have coordinates to
+    # cover each image pixel with a triangle.
+    mesh = FaceMesh(height, width)
+
+    # We need to boost the brightness of the image so that its sum and the sum of the area are equal
+    average_intensity = sum(imageBW) / (width * height)
+
+    # imageBW is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
+    # original image.
+    imageBW = imageBW ./ average_intensity
+
+    for i ∈ 1:2
+        println("\nSTARTING ITERATION $(i) ---")
+        max_update = single_iteration!(mesh, imageBW, "it$(i)")
+        println("---------- ITERATION $(i): $(max_update)")
+    end
+
+    height_map = find_surface(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
+
+    set_heights!(mesh, height_map)
+
+    # solidMesh = create_solid(mesh)
+    # save_stl!(
+    #     solidMesh,
+    #     "./examples/original_image.obj",
+    #     scale = Float64(1 / Grid_Definition * Artifact_Size),
+    #     scalez = Float64(1 / Grid_Definition * Artifact_Size),
+    # )
+
+    return mesh, imageBW
+end
+
+
+
+"""
+$(SIGNATURES)
+"""
+function single_iteration!(mesh, image, suffix)
+    # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
+    # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
+    LJ = get_area_pixels(mesh)
+    D = Float64.(LJ - image)
+
+    # Save the loss image as a png
+    plot_loss!(D, suffix, image)
+
+    # ϕ is the heightmap
+    ϕ = zeros(Float64, size(image))
+
+    max_update = 100.0
+    interaction_count = 0
+    while true
+        interaction_count += 1
+        interaction_count % 500 == 0 && println("Converging for intensity: $(max_update)")
+
+        old_max_update = max_update
+        max_update = relax!(ϕ, D)
+        if abs(max_update) < 1e-6 ||
+           abs((max_update - old_max_update) / old_max_update) < 0.01
+            println(
+                "Convergence stopped at step $(interaction_count) with max_update of $(max_update)",
+            )
+            break
+        end
+    end
+
+    save_stl!(
+        matrix_to_mesh(ϕ * 0.02),
+        "./examples/phi_$(suffix).obj",
+        reverse = false,
+        flipxy = true,
+    )
+    # plotAsQuiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
+    # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
+
+    # Now we need to march the x,y locations in our mesh according to this gradient!
+    march_mesh!(mesh, ϕ)
+    save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
+
+    return max_update
+end
+
+
+"""
+$(SIGNATURES)
+"""
+function find_surface(
+    mesh::FaceMesh,
+    image;
+    f = Focal_Length,
+    picture_width = Caustics_Side,
+)
+
+    # h(eight) indexes rows, w(idth) indexes columns
+    height, width = size(mesh)
+
+    # Coordinates difference
+    # C; Coordinates on the caustics. Simple rectangular values in pixels.
+    # Coordinates on the lens face coming from topleft field.
+    # x = rows; y = columns
+    dx = repeat(Float64.(1:height+1), 1, width + 1) - mesh.topleft.x
+    dy = repeat(Float64.(1:width+1)', height + 1, 1) - mesh.topleft.y
+
+    # true_H is the real distance beteen the surface of the lens and the projection
+    # H is the initial distance from the surface of the carved face to the projection screen.
+    # H is constant and does not account for the change in heights due to carving.
+    # The focal length is in meters. H is in Pixels.
+    H = f / Meters_Per_Pixel
+
+    true_H = similar(mesh.topleft.z)
+    @. true_H[:] = -mesh.topleft.z[:] + H
+
+    # Normals.
+    Nx = zeros(Float64, height + 1, width + 1)
+    Ny = zeros(Float64, height + 1, width + 1)
+    @. Nx[:] = tan(atan(dx[:] / true_H[:]) / (n₁ - n₂))
+    @. Ny[:] = tan(atan(dy[:] / true_H[:]) / (n₁ - n₂))
+
+    # We need to find the divergence of the Vector field described by Nx and Ny
+    divergence = zeros(Float64, width, height)
+    δr = zeros(Float64, width, height)
+    δc = zeros(Float64, width, height)
+
+    @. δr[1:end, 1:end] = Nx[2:end, 1:end-1] - Nx[1:end-1, 1:end-1]
+    @. δc[1:end, 1:end] = Nx[1:end-1, 2:end] - Ny[1:end-1, 1:end-1]
+    divergence = δr + δc
+
+    println("Have all the divergences")
+
+    height_map = zeros(Float64, height, width)
+    max_update = 1000.0
+    iteration_count = 0
+    while true
+        iteration_count += 1
+        iteration_count % 100 == 0 && println("Converging for divergence: $(max_update)")
+
+        old_max_update = max_update
+        max_update = relax!(height_map, divergence)
+        if abs(max_update) < 1e-6 ||
+           abs((max_update - old_max_update) / old_max_update) < 0.01
+            println(
+                "Convergence stopped improving at step $(iteration_count) with max_update of $(max_update)",
+            )
+            break
+        end
+    end
+
+    # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
+    return height_map
+end
+
+
+"""
+$(SIGNATURES)
+
+TODO: Think about the optimal offset for convergence.
+"""
+function set_heights!(
+    mesh,
+    height_map,
+    height_scale = 1.0,
+    height_offset = 0.0 * Top_Offset / Meters_Per_Pixel,
+)
+    width, height = size(height_map)
+
+    @. mesh.topleft.z[1:height, 1:width] =
+        height_map[1:height, 1:width] * height_scale + height_offset
+
+    # Forces the borders at Height_Offset. They will never change because nil velocity.
+    fill_borders!(mesh.topleft.z, height_offset)
+end
+
+
+"""
+$(SIGNATURES)
+"""
+function set_heights(height_map, height_scale = 1.0)
+    height, width = size(height_map)
+    mesh = FaceMesh(height, width)
+
+    return set_heights!(mesh, height_map, height_scale = 1.0)
+end
+
+
+
+"""
+$(SIGNATURES)
+"""
+function get_area_pixels(mesh::FaceMesh)
+    height, width = size(mesh)
+
+    # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
+    # The Z coordinate represents the value. brightness is just proportional to area.
+    pixel_areas = zeros(Float64, size(mesh))
+
+    for ci ∈ CartesianIndices(pixel_areas)
+        pixel_areas[ci] =
+            area(top_triangle3D(mesh, ci)...) + area(bot_triangle3D(mesh, ci)...)
+    end
+
+    return pixel_areas
+end
+
+
+"""
+$(SIGNATURES)
+"""
+function quantifyLoss!(D, suffix, img)
+    println("Loss:")
+    println("Minimum: $(minimum(D))")
+    println("Maximum: $(maximum(D))")
+
+    blue = zeros(size(D))
+    blue[D.>0] = D[D.>0]
+    red = zeros(size(D))
+    red[D.<0] = -D[D.<0]
+    green = zeros(size(D))
+
+    # println(size(blue))
+    # println(size(red))
+    # println(size(green))
+
+    rgbImg = RGB.(red, green, blue)'
+    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
+
+    # println("Saving output image:")
+    # println(typeof(img))
+    # E = Gray.(D)
+    # println(typeof(E))
+    # outputImg = img - E
+    # save("./examples/actual_$(suffix).png", outputImg)
+end
+
+
+
+
+"""
+$(SIGNATURES)
+
+This function implements successive over relaxation for a matrix and its associated error matrix
+There is a hardcoded assumption of Neumann boundary conditions--that the derivative across the
+boundary must be zero in all cases. See:
+https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
+
+"""
+function relax!(height_map::Matrix{Float64}, divergence::Matrix{Float64})
+    height, width = size(height_map)
+    n_pixels = height * width
+    val_average = sum(height_map) / n_pixels
+
+    # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
+    container = zeros(Float64, height + 2, width + 2)
+
+    container .= val_average
+    container[2:height+1, 2:height+1] .= height_map[:, :]
+
+    val_up = container[1:height, 2:width+1]
+    val_down = container[3:height+2, 2:width+1]
+    val_left = container[2:height+1, 1:width]
+    val_right = container[2:height+1, 3:width+2]
+
+    # Target position. The target is the current height map smoothed by averaging to which the
+    # divergence is added.
+    target_map = (val_up + val_down + val_left + val_right) ./ 4.0
+    target_map += divergence
+
+    # Let the heightmap converge towards the target at a slow rate.
+    height_map = height_map + ω .* (target_map - height_map)
+
+    max_update = maximum(abs.(height_map))
+    # println("\t\tMax update = $(target_map)")
+
+    return max_update
+end
+
+
 """
 $(SIGNATURES)
 
@@ -58,152 +393,27 @@ find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2]
 """
 $(SIGNATURES)
 """
-function ∇(ϕ::Matrix{Float64})
-    height, width = size(ϕ)
-
-    ∇ϕᵤ = zeros(Float64, height, width)   # the right edge will be filled with zeros
-    ∇ϕᵥ = zeros(Float64, height, width)   # the buttom edge will be filled with zeros
-
-    for row ∈ 1:height-1, col ∈ 1:width-1
-        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
-        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
-    end
-
-    ∇ϕᵤ[1:end, end] .= 0.0
-    ∇ϕᵤ[end, 1:end] .= 0.0
-
-    ∇ϕᵥ[1:end, end] .= 0.0
-    ∇ϕᵥ[end, 1:end] .= 0.0
-
-    return ∇ϕᵤ, ∇ϕᵥ
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function get_pixel_area(mesh::FaceMesh)
-    # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
-    # The Z coordinate represents the value. brightness is just proportional to area.
-    pixelAreas = zeros(Float64, size(mesh))
-
-    for ci ∈ CartesianIndices(pixelAreas)
-        pixelAreas[ci] =
-            area(top_triangle3D(mesh, ci)...) + area(bot_triangle3D(mesh, ci)...)
-    end
-
-    return pixelAreas
-end
-
-
-"""
-$(SIGNATURES)
-
-This function implements successive over relaxation for a matrix and its associated error matrix
-There is a hardcoded assumption of Neumann boundary conditions--that the derivative across the
-boundary must be zero in all cases. See:
-https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
-
-"""
-function relax!(height_map::Matrix{Float64}, divergence::Matrix{Float64})
-    height, width = size(height_map)
-    n_pixels = height * width
-    val_average = sum(height_map) / n_pixels
-
-    # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
-    container = zeros(Float64, height + 2, width + 2)
-
-    container .= val_average
-    container[2:height+1, 2:height+1] .= height_map[:, :]
-
-    val_up = container[1:height, 2:width+1]
-    val_down = container[3:height+2, 2:width+1]
-    val_left = container[2:height+1, 1:width]
-    val_right = container[2:height+1, 3:width+2]
-
-    # Target position. The target is the current height map smoothed by averaging to which the
-    # divergence is added.
-    target_map = (val_up + val_down + val_left + val_right) ./ 4.0
-    target_map += divergence
-
-    # Let the heightmap converge towards the target at a slow rate.
-    height_map = height_map + ω .* (target_map - height_map)
-
-    max_update = maximum(abs.(delta))
-    println("\t\tMax update = $(target_map)")
-
-    return max_update
-end
-
-
-"""
-$(SIGNATURES)
-
-This function will take a `grid_definition x grid_definition` matrix and returns a
-`grid_definition x grid_definition` mesh.
-
-"""
-function matrix_to_mesh(height_map::Matrix{Float64})
-    height, width = size(height_map)
-
-    mesh = FaceMesh(height, width)
-
-    for ci ∈ CartesianIndices(height_map)
-        mesh.topleft[ci].z = height_map[ci]
-    end
-
-    # The borders' height is forced at 0.
-    for row ∈ 1:height
-        mesh.topleft[row, 1].z = 0.0
-        mesh.topleft[row, end].z = 0.0
-    end
-
-    for col ∈ 1:width
-        mesh.topleft[1, col].z = 0.0
-        mesh.topleft[end, col].z = 0.0
-    end
-
-    return mesh
-end
-
-
-"""
-$(SIGNATURES)
-"""
 function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
 
-    height, width = size(mesh)
+    height, width = size(ϕ)
 
     # For each point in the mesh we need to figure out its velocity
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
-    for ci ∈ CartesianIndices(ϕ)
-        mesh.topleft[ci].vx = -∇ϕᵤ[ci]
-        mesh.topleft[ci].vy = -∇ϕᵥ[ci]
-    end
+    mesh.topleft.vx[1:height, 1:width] .= -∇ϕᵤ[1:height, 1:width]
+    mesh.topleft.vy[1:height, 1:width] .= -∇ϕᵥ[1:height, 1:width]
 
     # The velocity matrix was initialized with zeros everywhere. We nevertheless ovewrite them just in case...
-    for row ∈ 1:height
-        mesh.topleft[row, 1].vx = 0.0
-        mesh.topleft[row, 1].vy = 0.0
-        mesh.topleft[row, end].vx = 0.0
-        mesh.topleft[row, end].vy = 0.0
-    end
-
-    for col ∈ 1:width
-        mesh.topleft[1, col].vx = 0.0
-        mesh.topleft[1, col].vy = 0.0
-        mesh.topleft[end, col].vx = 0.0
-        mesh.topleft[end, col].vy = 0.0
-    end
+    fill_borders!(mesh.topleft.vx, 0.0)
+    fill_borders!(mesh.topleft.vy, 0.0)
 
     # Basically infinity time to shrink a triangle to zip.
     min_t = 1.0
 
-    for ci ∈ CartesianIndices(ϕ)
-        top_tri = top_triangle3D(mesh, ci)
+    for row ∈ 1:height-1, col ∈ 1:width-1
+        top_tri = top_triangle3D(mesh, row, col)
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested in positive times.
@@ -215,7 +425,7 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
         end
 
 
-        bot_tri = bot_triangle3D(mesh, ci)
+        bot_tri = bot_triangle3D(mesh, row, col)
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested in positive times.
@@ -233,10 +443,8 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     # Modify the mesh triangles but ensuring that we are far from destroying any of them with a nil area.
     δ = min_t / 2
 
-    for ci ∈ CartesianIndices(mesh.topleft)
-        mesh.topleft[ci].x += δ * mesh.topleft[ci].vx
-        mesh.topleft[ci].y += δ * mesh.topleft[ci].vy
-    end
+    mesh.topleft.x[:] .+= δ * mesh.topleft.vx[:]
+    mesh.topleft.y[:] .+= δ * mesh.topleft.vy[:]
 
     # saveObj(mesh, "gateau.obj")
 end
@@ -244,123 +452,16 @@ end
 
 """
 $(SIGNATURES)
+
+TO REFACTOR.
 """
-function quantifyLoss!(D, suffix, img)
-    println("Loss:")
-    println("\tMinimum loss: $(minimum(D))")
-    println("\tMaximum loss: $(maximum(D))")
-
-    blue = zeros(size(D))
-    blue[D.>0] = D[D.>0]
-    red = zeros(size(D))
-    red[D.<0] = -D[D.<0]
-    green = zeros(size(D))
-
-    rgbImg = RGB.(red, green, blue)'
-    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
-
-    # println("Saving output image:")
-    # println(typeof(img))
-    # E = Gray.(D)
-    # println(typeof(E))
-    # outputImg = img - E
-    # save("./examples/actual_$(suffix).png", outputImg)
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function single_iteration!(mesh, image, suffix)
-    # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
-    # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
-    LJ = get_pixel_area(mesh)
-    D = Float64.(LJ - image)
-
-    # Save the loss image as a png
-    quantifyLoss!(D, suffix, image)
-
-    # ϕ is the heightmap
-    ϕ = zeros(Float64, size(image))
-
-    max_update = 100.0
-    interaction_count = 0
-    while true
-        interaction_count += 1
-        interaction_count % 500 == 0 && println("Converging for intensity: $(max_update)")
-
-        old_max_update = max_update
-        max_update = relax!(ϕ, D)
-        if abs(max_update) < 1e-6 ||
-           abs((max_update - old_max_update) / old_max_update) < 0.01
-            println(
-                "Convergence stopped at step $(interaction_count) with max_update of $(max_update)",
-            )
-            break
-        end
-    end
-
-    save_stl!(
-        matrix_to_mesh(ϕ * 0.02),
-        "./examples/phi_$(suffix).obj",
-        reverse = false,
-        flipxy = true,
-    )
-    # plotAsQuiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
-    # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
-
-    # Now we need to march the x,y locations in our mesh according to this gradient!
-    march_mesh!(mesh, ϕ)
-    save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
-
-    return max_update
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function set_heights!(
-    mesh,
-    height_map,
-    height_scale = 1.0,
-    height_offset = Top_Offset / Meters_Per_Pixel,
+function create_solid(
+    mesh::FaceMesh;
+    bottom_offset = Bottom_Offset / Meters_Per_Pixel,
+    top_offset = Top_Offset / Meters_Per_Pixel,
 )
-    width, height = size(height_map)
-
-    for ci ∈ CartesianIndices(height_map)
-        mesh.topleft[ci].z = height_map[ci] * height_scale + height_offset
-    end
-
-    # Forces the borders at Height_Offset. They will never change because nil velocity.
-    for row ∈ 1:height
-        mesh.topleft[row, 1].z = Top_Offset
-        mesh.topleft[row, end].z = Top_Offset
-    end
-
-    for col ∈ 1:width
-        mesh.topleft[1, col].z = Top_Offset
-        mesh.topleft[end, col].z = Top_Offset
-    end
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function set_heights(height_map, height_scale = 1.0)
-    height, width = size(height_map)
-    mesh = RectangleMesh(height, width)
-
-    return set_heights!(mesh, height_map, height_scale = 1.0)
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function create_solid(mesh, bottom_offset = Bottom_Offset / Meters_Per_Pixel)
     height, width = size(mesh)
+
 
     ###
     ### Top mesh
@@ -376,182 +477,77 @@ function create_solid(mesh, bottom_offset = Bottom_Offset / Meters_Per_Pixel)
     ### Botttom mesh
     ###
     # Build the bottom surface which is prepopulated by its constructor. However, its height is incorrect.
+
+    # Coordinates on the caustics
+    rows = repeat(Float64.(1:height), 1, width)
+    cols = repeat(Float64.(1:width)', height, 1)
+
     bottom_mesh = FaceMesh(height, width)
-    for ci ∈ CartesianIndices(bottom_mesh)
-        row = ci[1]
-        col = ci[2]
-        bottom_mesh.topleft[ci] = Vertex3D(row, col, -Bottom_Offset, 0.0, 0.0)
-    end
+    bottom_mesh.topleft.x[:] .= rows[:]
+    bottom_mesh.topleft.y[:] .= cols[:]
+    bottom_mesh.topleft.z[:] .= -Bottom_Offset
+    bottom_mesh.topleft.vx[:] .= 0.0
+    bottom_mesh.topleft.vx[:] .= 0.0
+
 
     ###
     ### Side meshes
     ###
-    # Build the triangles to close the mesh
-    x = 1
-    for y = 1:(height-1)
+    # Build triangles to create side meshes and close the mesh
+    # The mesh is made of a single top/bottom triangles joining the bottom face
+    # and the top face.
+
+    # (Looking from above), left side.
+
+    list_triangles = []
+    col = 1
+    for row = 1:height
         count += 1
 
-        ll = (y - 1) * width + x
+        ll = (row - 1) * width + col
         ul = ll + totalNodes / 2
-        lr = y * width + x
+        lr = row * width + col
         ur = lr + totalNodes / 2
         triangles[2*count-1] = Triangle(ll, ul, ur)
         triangles[2*count] = Triangle(ur, lr, ll)
     end
 
-    x = width
-    for y = 1:(height-1)
+    mesh_right = FaceMesh(height, 1)
+    for row = 1:(height-1)
         count += 1
 
-        ll = (y - 1) * width + x
+        ll = (row - 1) * width + col
         ul = ll + totalNodes / 2
-        lr = y * width + x
+        lr = row * width + col
         ur = lr + totalNodes / 2
         triangles[2*count-1] = Triangle(ll, ur, ul)
         triangles[2*count] = Triangle(ur, ll, lr)
     end
 
-    y = 1
-    for x = 2:width
+    mesh_up = FaceMesh(1, width)
+    row = 1
+    for col = 2:width
         count += 1
 
-        ll = (y - 1) * width + x
+        ll = (row - 1) * width + col
         ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
+        lr = (row - 1) * width + (col - 1)
         ur = lr + totalNodes / 2
         triangles[2*count-1] = Triangle(ll, ul, ur)
         triangles[2*count] = Triangle(ur, lr, ll)
     end
 
-    y = height
-    for x = 2:width
+    mesh_down = FaceMesh(1, width)
+    for col = 2:width
         count += 1
 
-        ll = (y - 1) * width + x
+        ll = (row - 1) * width + col
         ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
+        lr = (row - 1) * width + (col - 1)
         ur = lr + totalNodes / 2
         triangles[2*count-1] = Triangle(ll, ur, ul)
         triangles[2*count] = Triangle(ur, ll, lr)
     end
 
-    return RectangleMesh(nodeList, nodeArrayBottom, triangles, width, height)
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function find_surface(
-    mesh::FaceMesh,
-    image;
-    f = Focal_Length,
-    picture_width = Caustics_Side,
-)
-
-    # H is the initial distance from the surface of the carved face to the projection screen.
-    # H is constant and does not account for the change in heights due to carving.
-    # The focal length is in meters. H is in Pixels.
-    H = f / Meters_Per_Pixel
-
-    # h(eight) indexes rows, w(idth) indexes columns
-    height, width = size(mesh)
-    Nx = zeros(Float64, height + 1, width + 1)
-    Ny = zeros(Float64, height + 1, width + 1)
-
-    for row ∈ 1:height+1, col ∈ 1:width+1
-        # Coordinates on the caustics
-        cx = row
-        cy = col
-
-        # Coordinates on the lens face
-        lx = mesh.topleft[row, col].x
-        ly = mesh.topleft[row, col].y
-
-        # Coordinates difference
-        dx = cx - lx
-        dy = cy - ly
-
-        true_H = H - mesh.topleft[row, col].z
-
-        Nx[row, col] = tan(atan(dx / true_H) / (n₁ - n₂))
-        Ny[row, col] = tan(atan(dy / true_H) / (n₁ - n₂))
-    end
-
-    # We need to find the divergence of the Vector field described by Nx and Ny
-    divergence = zeros(Float64, width, height)
-    δr = zeros(Float64, width, height)
-    δc = zeros(Float64, width, height)
-
-    δr[1:end, 1:end] .= Nx[2:end, 1:end-1] .- Nx[1:end-1, 1:end-1]
-    δc[1:end, 1:end] .= Nx[1:end-1, 2:end] .- Ny[1:end-1, 1:end-1]
-    divergence = δr + δc
-
-    println("Have all the divergences")
-
-    height_map = zeros(Float64, height, width)
-    max_update = 1000.0
-    iteration_count = 0
-    while true
-        iteration_count += 1
-        iteration_count % 100 == 0 && println("Converging for divergence: $(max_update)")
-
-        old_max_update = max_update
-        max_update = relax!(height_map, divergence)
-        if abs(max_update) < 1e-6 ||
-           abs((max_update - old_max_update) / old_max_update) < 0.01
-            println(
-                "Convergence stopped improving at step $(iteration_count) with max_update of $(max_update)",
-            )
-            break
-        end
-    end
-
-    # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
-    return height_map
-end
-
-
-
-
-"""
-$(SIGNATURES)
-"""
-function engineer_caustics(source_image)
-    imageBW = Float64.(Gray.(source_image))
-    imageBW = permutedims(imageBW)
-
-    width, height = size(imageBW)
-    println("Image size: $((height, width))")
-
-    # meshy is the same size as the image with an extra row/column to have coordinates to
-    # cover each image pixel with a triangle.
-    mesh = FaceMesh(height, width)
-
-    # We need to boost the brightness of the image so that its sum and the sum of the area are equal
-    average_intensity = sum(imageBW) / (width * height)
-
-    # imageBW is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
-    # original image.
-    imageBW = imageBW ./ average_intensity
-
-    for i ∈ 1:5
-        println("\nSTARTING ITERATION $(i) \t--------------------------------------- ")
-        max_update = single_iteration!(mesh, imageBW, "it$(i)")
-        println("---------- ITERATION $(i): $(max_update)")
-    end
-
-    height_map = find_surface(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
-
-    set_heights!(mesh, height_map)
-    # solidMesh = create_solid(mesh)
-
-    # save_stl!(
-    #     solidMesh,
-    #     "./examples/original_image.obj",
-    #     scale = Float64(1 / Grid_Definition * Artifact_Size),
-    #     scalez = Float64(1 / Grid_Definition * Artifact_Size),
-    # )
-
-    return mesh, imageBW
+    return RectangleMesh(nodeList, nodeArrarowBottom, triangles, width, height)
 end
