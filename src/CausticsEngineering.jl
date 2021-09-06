@@ -1,7 +1,7 @@
 module CausticsEngineering
 
 using DocStringExtensions
-using Meshes, Images
+using Random, Meshes, Images
 
 using Plots
 gr()

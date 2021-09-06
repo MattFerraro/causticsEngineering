@@ -5,14 +5,14 @@ $(TYPEDEF)
 
 """
 struct Vertex3D
-    x::Float64
-    y::Float64
+    r::Float64
+    c::Float64
     z::Float64
 
-    vx::Float64
-    vy::Float64
+    vr::Float64
+    vc::Float64
 
-    Vertex3D(x, y, z, vx, vy) = new(x, y, z, vx, vy)
+    Vertex3D(r, c, z, vr, vc) = new(r, c, z, vr, vc)
     Vertex3D() = new(0.0, 0.0, 0.0, 0.0, 0.0)
 end
 
@@ -20,20 +20,20 @@ end
 $(SIGNATURES)
 """
 function dist(p1::Tuple{Float64,Float64,Float64}, p2::Tuple{Float64,Float64,Float64})
-    dx = p2[1] - p1[1]
-    dy = p2[2] - p1[2]
+    dr = p2[1] - p1[1]
+    dc = p2[2] - p1[2]
     dz = p2[3] - p1[3]
-    return sqrt(dx^2 + dy^2 + dz^2)
+    return sqrt(dr^2 + dc^2 + dz^2)
 end
 
 """
 $(SIGNATURES)
 """
 function dist(p1::Vertex3D, p2::Vertex3D)
-    dx = p2.x - p1.x
-    dy = p2.y - p1.y
+    dr = p2.r - p1.r
+    dc = p2.c - p1.c
     dz = p2.z - p1.z
-    return sqrt(dx^2 + dy^2 + dz^2)
+    return sqrt(dr^2 + dc^2 + dz^2)
 end
 
 
@@ -72,7 +72,7 @@ $(SIGNATURES)
 A midpoint is the average between two points
 """
 midpoint(p1::Vertex3D, p2::Vertex3D) =
-    Vertex3D((p1.x + p2.x) / 2.0, (p1.y + p2.y) / 2.0, (p1.z + p2.z) / 2.0, 0.0, 0.0)
+    Vertex3D((p1.r + p2.r) / 2.0, (p1.c + p2.c) / 2.0, (p1.z + p2.z) / 2.0, 0.0, 0.0)
 
 
 """
@@ -81,8 +81,8 @@ $(SIGNATURES)
 Centroid of three points.
 """
 centroid(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D) = Vertex3D(
-    (p1.x + p2.x + p3.x) / 3.0,
-    (p1.y + p2.y + p3.y) / 3.0,
+    (p1.r + p2.r + p3.r) / 3.0,
+    (p1.c + p2.c + p3.c) / 3.0,
     (p1.z + p2.z + p3.z) / 3.0,
     0,
     0,
@@ -118,29 +118,32 @@ Implementation is a struc of arrays. Easier to vectorise.
 mutable struct FieldVertex3D
     size::Tuple{Int,Int}
 
-    x::AbstractMatrix{Float64}
+    r::AbstractMatrix{Float64}
     y::AbstractMatrix{Float64}
     z::AbstractMatrix{Float64}
 
-    vx::AbstractMatrix{Float64}
-    vy::AbstractMatrix{Float64}
+    vr::AbstractMatrix{Float64}
+    vc::AbstractMatrix{Float64}
 
     function FieldVertex3D(height, width)
-        # mx = zeros(Float64, height + 1, width + 1)
+        # mr = zeros(Float64, height + 1, width + 1)
         # my = zeros(Float64, height + 1, width + 1)
         # mz = zeros(Float64, height + 1, width + 1)
 
-        # mvx = zeros(Float64, height + 1, width + 1)
-        # mvy = zeros(Float64, height + 1, width + 1)
+        # mvr = zeros(Float64, height + 1, width + 1)
+        # mvc = zeros(Float64, height + 1, width + 1)
 
-        mx = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-        my = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        rows = repeat(Float64.(1:height+1), 1, width + 1)
+        cols = repeat(Float64.(1:width+1)', height + 1, 1)
+
+        mr = rows + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        my = cols + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
         mz = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
 
-        mvx = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-        mvy = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+        mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
 
-        new((height, width), mx, my, mz, mvx, mvy)
+        new((height, width), mr, my, mz, mvr, mvc)
     end
 end
 
@@ -155,11 +158,11 @@ function Vertex3D(fv::FieldVertex3D, row, col)
 
     if (1 <= row <= height + 1) && (1 <= col <= width + 1)
         Vertex3D(
-            fv.x[row, col],
+            fv.r[row, col],
             fv.y[row, col],
             fv.z[row, col],
-            fv.vx[row, col],
-            fv.vy[row, col],
+            fv.vr[row, col],
+            fv.vc[row, col],
         )
     else
         missing
@@ -194,36 +197,30 @@ struct FaceMesh
     toptriangles::AbstractMatrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}
     bottriangles::AbstractMatrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}
 
-    as_index::Function
-
     FaceMesh(s, tl, tt, bt) = new(s, tl, tt, bt)
-end
 
-function FaceMesh(height::Int, width::Int)
+    function FaceMesh(height::Int, width::Int)
+        m_topleft = FieldVertex3D(height, width)
+        t_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
+            undef,
+            height,
+            width,
+        )
+        b_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
+            undef,
+            height,
+            width,
+        )
 
-    function as_index(r, c)
-        # Adding "+ 1" since it is the size of the `topleft` matrix
-        if 1 <= r <= height + 1 && 1 <= c <= width + 1
-            return r + (c - 1) * (width + 1)
-        else
-            return nothing
+        for row ∈ 1:height, col ∈ 1:width
+            t_triangles[row, col] = ((row, col), (row + 1, col), (row, col + 1))
+            b_triangles[row, col] = ((row, col + 1), (row + 1, col), (row + 1, col + 1))
         end
+
+        return FaceMesh((height, width), m_topleft, t_triangles, b_triangles)
     end
-    as_index(ci::CartesianIndex) = as_index(ci[1], ci[2])
-
-    m_topleft = FieldVertex3D(height, width)
-    t_triangles =
-        Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(undef, height, width)
-    b_triangles =
-        Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(undef, height, width)
-
-    for row ∈ 1:height, col ∈ 1:width
-        t_triangles[row, col] = ((row, col), (row + 1, col), (row, col + 1))
-        b_triangles[row, col] = ((row, col + 1), (row + 1, col), (row + 1, col + 1))
-    end
-
-    return FaceMesh((height, width), m_topleft, t_triangles, b_triangles)
 end
+
 
 
 """
@@ -258,31 +255,32 @@ Converts a triangle as a triplet of references to mesh vertices to a triplet of 
 """
 function top_triangle3D(mesh::FaceMesh, row::Int, col::Int)
     height, width = size(mesh)
-    if 1 <= row <= height + 1 && 1 <= col <= width + 1
+    if 1 <= row <= height && 1 <= col <= width
         t = mesh.toptriangles[row, col]
-        t1 = CartesianIndex(t[1][1], t[1][2])
-        t2 = CartesianIndex(t[2][1], t[2][2])
-        t3 = CartesianIndex(t[3][1], t[3][2])
+        t1_row, t1_col = t[1]
+        t2_row, t2_col = t[2]
+        t3_row, t3_col = t[3]
+
         p1 = Vertex3D(
-            mesh.topleft.x[t1],
-            mesh.topleft.y[t1],
-            mesh.topleft.z[t1],
-            mesh.topleft.vx[t1],
-            mesh.topleft.vy[t1],
+            mesh.topleft.r[t1_row, t1_col],
+            mesh.topleft.c[t1_row, t1_col],
+            mesh.topleft.z[t1_row, t1_col],
+            mesh.topleft.vr[t1_row, t1_col],
+            mesh.topleft.vc[t1_row, t1_col],
         )
         p2 = Vertex3D(
-            mesh.topleft.x[t2],
-            mesh.topleft.y[t2],
-            mesh.topleft.z[t2],
-            mesh.topleft.vx[t2],
-            mesh.topleft.vy[t2],
+            mesh.topleft.r[t2_row, t2_col],
+            mesh.topleft.c[t2_row, t2_col],
+            mesh.topleft.z[t2_row, t2_col],
+            mesh.topleft.vr[t2_row, t2_col],
+            mesh.topleft.vc[t2_row, t2_col],
         )
         p3 = Vertex3D(
-            mesh.topleft.x[t3],
-            mesh.topleft.y[t3],
-            mesh.topleft.z[t3],
-            mesh.topleft.vx[t3],
-            mesh.topleft.vy[t3],
+            mesh.topleft.r[t3_row, t3_col],
+            mesh.topleft.c[t3_row, t3_col],
+            mesh.topleft.z[t3_row, t3_col],
+            mesh.topleft.vr[t3_row, t3_col],
+            mesh.topleft.vc[t3_row, t3_col],
         )
         return (p1, p2, p3)
     else
@@ -295,31 +293,32 @@ top_triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}) = top_triangle3D(mesh, ci[
 
 function bot_triangle3D(mesh::FaceMesh, row::Int, col::Int)
     height, width = size(mesh)
-    if 1 <= row <= height + 1 && 1 <= col <= width + 1
+    if 1 <= row <= height && 1 <= col <= width
         t = mesh.bottriangles[row, col]
-        t1 = CartesianIndex(t[1][1], t[1][2])
-        t2 = CartesianIndex(t[2][1], t[2][2])
-        t3 = CartesianIndex(t[3][1], t[3][2])
+        t1_row, t1_col = t[1]
+        t2_row, t2_col = t[2]
+        t3_row, t3_col = t[3]
+
         p1 = Vertex3D(
-            mesh.topleft.x[t1],
-            mesh.topleft.y[t1],
-            mesh.topleft.z[t1],
-            mesh.topleft.vx[t1],
-            mesh.topleft.vy[t1],
+            mesh.topleft.r[t1_row, t1_col],
+            mesh.topleft.c[t1_row, t1_col],
+            mesh.topleft.z[t1_row, t1_col],
+            mesh.topleft.vr[t1_row, t1_col],
+            mesh.topleft.vc[t1_row, t1_col],
         )
         p2 = Vertex3D(
-            mesh.topleft.x[t2],
-            mesh.topleft.y[t2],
-            mesh.topleft.z[t2],
-            mesh.topleft.vx[t2],
-            mesh.topleft.vy[t2],
+            mesh.topleft.r[t2_row, t2_col],
+            mesh.topleft.c[t2_row, t2_col],
+            mesh.topleft.z[t2_row, t2_col],
+            mesh.topleft.vr[t2_row, t2_col],
+            mesh.topleft.vc[t2_row, t2_col],
         )
         p3 = Vertex3D(
-            mesh.topleft.x[t3],
-            mesh.topleft.y[t3],
-            mesh.topleft.z[t3],
-            mesh.topleft.vx[t3],
-            mesh.topleft.vy[t3],
+            mesh.topleft.r[t3_row, t3_col],
+            mesh.topleft.c[t3_row, t3_col],
+            mesh.topleft.z[t3_row, t3_col],
+            mesh.topleft.vr[t3_row, t3_col],
+            mesh.topleft.vc[t3_row, t3_col],
         )
         return (p1, p2, p3)
     else

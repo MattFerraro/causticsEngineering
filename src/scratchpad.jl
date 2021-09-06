@@ -4,10 +4,14 @@ using Images
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
 
 using CausticsEngineering
-mesh, image_caustics = engineer_caustics(image);
+mesh, imageBW = engineer_caustics(image);
 
-Gray.(image_caustics)
-Gray.(Float64.(Gray.(image)) - image_caustics)
+Gray.(imageBW)
+
+mesh.topleft.r[250:260, 250:260]
+mesh.topleft.c[250:260, 250:260]
+mesh.topleft.z[250:260, 250:260]
+
 
 using Test
 
