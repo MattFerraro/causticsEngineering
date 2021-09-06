@@ -52,8 +52,8 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
     end
 end
 
-
 find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])
+
 
 """
 $(SIGNATURES)
@@ -121,8 +121,13 @@ function relax!(height_map::Matrix{Float64}, divergence::Matrix{Float64})
     val_left = container[2:height+1, 1:width]
     val_right = container[2:height+1, 3:width+2]
 
-    delta = (val_up + val_down + val_left + val_right - divergence) ./ 4.0
-    height_map = height_map + ω .* (delta - height_map)
+    # Target position. The target is the current height map smoothed by averaging to which the
+    # divergence is added.
+    target_map = (val_up + val_down + val_left + val_right) ./ 4.0
+    target_map += divergence
+
+    # Let the heightmap converge towards the target at a slow rate.
+    height_map = height_map + ω .* (target_map - height_map)
 
     return maximum(abs.(delta))
 end
