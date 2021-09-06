@@ -72,3 +72,30 @@ function plot_velocities_as_quiver(vx, vy; stride = 4, scale = 300, max_length =
     display(q)
     readline()
 end
+
+
+
+"""
+$(SIGNATURES)
+"""
+function plot_loss!(D, suffix, img)
+    println("Loss:")
+    println("\tMinimum loss: $(minimum(D))")
+    println("\tMaximum loss: $(maximum(D))")
+
+    blue = zeros(size(D))
+    blue[D.>0] = D[D.>0]
+    red = zeros(size(D))
+    red[D.<0] = -D[D.<0]
+    green = zeros(size(D))
+
+    rgbImg = RGB.(red, green, blue)'
+    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
+
+    # println("Saving output image:")
+    # println(typeof(img))
+    # E = Gray.(D)
+    # println(typeof(E))
+    # outputImg = img - E
+    # save("./examples/actual_$(suffix).png", outputImg)
+end

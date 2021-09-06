@@ -8,8 +8,8 @@ gr()
 
 include("parameters.jl")
 include("utilities.jl")
-include("plots.jl")
 include("io.jl")
+include("plots.jl")
 
 include("create_mesh.jl")
 
@@ -32,6 +32,6 @@ $(SIGNATURES)
 main()
 
 
-export FaceMesh, main, engineer_caustics
+export Vertex3D, FieldVertex3D, FaceMesh, main, engineer_caustics
 
 end # End module
