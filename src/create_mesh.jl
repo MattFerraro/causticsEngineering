@@ -7,7 +7,7 @@ function engineer_caustics(source_image)
     width, height = size(imageBW)
     println("Image size: $((height, width))")
 
-    # meshy is the same size as the image with an extra row/column to have coordinates to
+    # mesh is the same size as the image with an extra row/column to have coordinates to
     # cover each image pixel with a triangle.
     mesh = FaceMesh(height, width)
     print("Mesh creation: ")
@@ -55,8 +55,12 @@ end
 $(SIGNATURES)
 """
 function single_iteration!(mesh, image, suffix)
-    # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
+    # Remember mesh is (will be) `grid_definition x grid_definition` just like the image
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
+
+    # The idea is that:
+    # - any pixel on the caustic projection receives light from a given 'rectangle' on the lens.
+    # - That rectangle is made of 2 triangles.
 
     # DOES NOT WORK. D IS ALWAYS IDENTICAL
     LJ = get_area_pixels(mesh)
@@ -204,15 +208,18 @@ function set_heights(height_map, height_scale = 1.0)
 end
 
 
-
 """
 $(SIGNATURES)
+
+A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
+area in the x, y plane. z is ignored.
+
+The function returns a matrix with the quantity of light coming from each 'rectangle'  around a pixel. That 'rectangle'
+has been shifted and flexed around.
 """
 function get_area_pixels(mesh::FaceMesh)
     height, width = size(mesh)
 
-    # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
-    # The Z coordinate represents the value. brightness is just proportional to area.
     pixel_areas = zeros(Float64, size(mesh))
 
     for ci ∈ CartesianIndices(pixel_areas)
