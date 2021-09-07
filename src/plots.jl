@@ -2,7 +2,50 @@
 $(SIGNATURES)
 """
 function plot_as_quiver(
-    g;
+    mesh::FaceMesh;
+    stride = 4,
+    scale = 300,
+    max_length = 2,
+    flipxy = false,
+    reverser = false,
+    reversec = false,
+)
+
+    height, width = size(mesh)
+    rs = Float64[]
+    cs = Float64[]
+    vrs = Float64[]
+    vcs = Float64[]
+
+    ϕ = -mesh.topleft.h
+
+    vrm = reverser ? mesh.topleft.vr .* scale : -mesh.topleft.vr .* scale
+    vcm = reversec ? -mesh.topleft.vc .* scale : mesh.topleft.vc .* scale
+
+    vrm = clamp.(vrm, -max_length, max_length)
+    vcm = clamp.(vcm, -max_length, max_length)
+
+    for row = 1:stride:height, col = 1:stride:width
+        reverser ? push!(rs, row) : push!(rs, -row)
+        reversec ? push!(cs, -col) : push!(cs, col)
+
+        push!(vrs, vrm[row, col])
+        push!(vcs, vcm[row, col])
+    end
+
+    q =
+        flipxy ? quiver(cs, rs, quiver = (vcs, vrs), aspect_ratio = :equal) :
+        quiver(rs, cs, quiver = (vrs, vcs), aspect_ratio = :equal)
+
+    display(q)
+end
+
+
+"""
+$(SIGNATURES)
+"""
+function plot_as_quiver(
+    ϕ;
     stride = 4,
     scale = 300,
     max_length = 2,
@@ -11,7 +54,7 @@ function plot_as_quiver(
     reversex = false,
 )
 
-    h, w = size(g)
+    h, w = size(ϕ)
     xs = Float64[]
     ys = Float64[]
     us = Float64[]
@@ -21,9 +64,9 @@ function plot_as_quiver(
         reversex ? push!(xs, x) : push!(xs, -x)
         reversey ? push!(ys, -y) : push!(ys, y)
 
-        p1 = g[y, x]
-        u = (g[y, x+1] - g[y, x]) * scale
-        v = (g[y+1, x] - g[y, x]) * scale
+        p1 = ϕ[y, x]
+        u = (ϕ[y, x+1] - ϕ[y, x]) * scale
+        v = (ϕ[y+1, x] - ϕ[y, x]) * scale
 
         u = -u
 
@@ -40,7 +83,6 @@ function plot_as_quiver(
         quiver(xs, ys, quiver = (us, vs), aspect_ratio = :equal)
 
     display(q)
-    readline()
 end
 
 

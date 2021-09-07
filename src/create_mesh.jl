@@ -4,43 +4,55 @@ $(SIGNATURES)
 function engineer_caustics(source_image)
     imageBW = Float64.(Gray.(source_image))
 
-    width, height = size(imageBW)
+    height, width = size(imageBW)
     println("Image size: $((height, width))")
 
     # mesh is the same size as the image with an extra row/column to have coordinates to
     # cover each image pixel with a triangle.
     mesh = FaceMesh(height, width)
-    print("Mesh creation: ")
-    println("$(mesh.topleft.vr[256, 256]) , $(mesh.topleft.vc[256, 256])")
+    println("Mesh creation: ")
+    r_check = 1
+    c_check = 1
+    println(
+        "\tCoordinates: $(mesh.topleft.r[r_check, c_check]) , $(mesh.topleft.c[r_check, c_check]) , $(mesh.topleft.h[r_check, c_check])",
+    )
+    println(
+        "\tVelocities: $(mesh.topleft.vr[r_check, c_check]) , $(mesh.topleft.vc[r_check, c_check])",
+    )
 
-    # We need to boost the brightness of the image so that its sum and the sum of the area are equal
-    average_intensity = sum(imageBW) / (width * height)
+    # The energy going through the lens is equal to the amount of energy on the caustics
+    total_energy_lens = height * width
+    total_energy_caustics = sum(imageBW)
+    correction_ratio = (width * height) / sum(imageBW)
 
     # imageBW is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
     # original image.
-    imageBW = imageBW ./ average_intensity
+    imageBW = imageBW .* correction_ratio
 
-    for i ∈ 1:5
-        println("\nSTARTING HORIZONTAL ITERATION $(i) ---")
+    for i ∈ 1:256
+        println("\nSTARTING VERTICAL ITERATION $(i) ---")
 
-        print("Horizontal move: ")
         max_update = move_vertically!(mesh, imageBW, "it$(i)")
-        println(" max update = $(max_update)")
+        print("Vertical move max update = $(max_update)")
 
-        # println("$(mesh.topleft.vr[256, 256]) , $(mesh.topleft.vc[256, 256])")
-        # println("   (Speed at 256, 256 = $(mesh.topleft.vr[256, 256]) , $(mesh.topleft.vc[256, 256])")
+        println(
+            "\tCoordinates: $(mesh.topleft.r[r_check, c_check]) , $(mesh.topleft.c[r_check, c_check]) , $(mesh.topleft.h[r_check, c_check])",
+        )
+        println(
+            "\tVelocities: $(mesh.topleft.vr[r_check, c_check]) , $(mesh.topleft.vc[r_check, c_check])",
+        )
 
         println("---------- ITERATION $(i): $(max_update)/n")
     end
 
-    print("Vertical move: ")
-    mesh.topleft.z, max_update =
+    println("\nSTARTING HORIZONTAL ITERATION ---")
+    mesh.topleft.h, max_update =
         move_horizontally(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
     println(" max update = $(max_update)")
 
 
 
-    println("$(mesh.topleft.vr[256, 256]) , $(mesh.topleft.vc[256, 256])")
+    println("$(mesh.topleft.vr[r_check, c_check]) , $(mesh.topleft.vc[r_check, c_check])")
 
 
     # solidMesh = create_solid(mesh)
@@ -48,7 +60,7 @@ function engineer_caustics(source_image)
     #     solidMesh,
     #     "./examples/original_image.obj",
     #     scale = Float64(1 / Grid_Definition * Artifact_Size),
-    #     scalez = Float64(1 / Grid_Definition * Artifact_Size),
+    #     scaleh = Float64(1 / Grid_Definition * Artifact_Size),
     # )
 
     return mesh, imageBW
@@ -67,25 +79,25 @@ function move_vertically!(mesh, image, suffix)
     # - any pixel on the caustic projection receives light from a given 'rectangle' on the lens.
     # - That rectangle is made of 2 triangles.
     area_distorted_pixels = get_area_pixels(mesh)
+    @assert max_sum_abs(area_distorted_pixels) "ALERT: vert. Δ area_distorted_pixels is too large - max/min = $(maximum(area_distorted_pixels)) / $(minimum(area_distorted_pixels))"
+
     intensity_error = Float64.(area_distorted_pixels - image)
+    @assert max_sum_abs(intensity_error) "ALERT: vert. Δ intensity_error is too large - max/min = $(maximum(intensity_error)) / $(minimum(intensity_error))"
 
     # The divergence matrix moves all the topleft corners. illumination_error is therefore not large enough.
     height, width = size(mesh)
     divergence_intensity = zeros(Float64, height + 1, width + 1)
     divergence_intensity[1:height, 1:width] .= intensity_error[1:height, 1:width]
+    fill_borders!(divergence_intensity, 0.0)
 
-    divergence_intensity[:, 1] .= 0.0
-    divergence_intensity[:, end] .= 0.0
-    divergence_intensity[1, :] .= 0.0
-    divergence_intensity[end, :] .= 0.0
+    @assert max_sum_abs(divergence_intensity) "ALERT: vert. Δ divergence_intensity is too large - max/min = $(maximum(divergence_intensity)) / $(minimum(divergence_intensity))"
+
 
     # Save the loss image as a png
     plot_loss!(divergence_intensity, suffix, image)
 
     # ϕ is the _heightmap_ therefore size of topleft
-    # ϕ = zeros(Float64, size(image))
-    # ϕ = rand(Float64, height+1, width+1) ./ 1_000 .- 0.5 / 1_000
-    ϕ = mesh.topleft.z
+    ϕ = mesh.topleft.h
 
     max_update = 100.0
     interaction_count = 0
@@ -98,13 +110,16 @@ function move_vertically!(mesh, image, suffix)
         if abs(max_update) < 1e-6 ||
            abs((max_update - old_max_update) / old_max_update) < 0.01
             println(
-                "Convergence stopped at step $(interaction_count) with max_update of $(max_update)",
+                "Convergence stopped at step $(interaction_count) with ",
+                "max_update = $(max_update) -- ",
+                "max/min area_distorted_pixels = $(maximum(area_distorted_pixels)) / $(minimum(area_distorted_pixels)) -- ",
+                "max divergence = $(maximum(abs.(divergence_intensity)))",
             )
             break
         end
     end
 
-    mesh.topleft.z[1:height+1, 1:width+1] .= ϕ[1:height+1, 1:width+1]
+    mesh.topleft.h[1:height+1, 1:width+1] .= ϕ[1:height+1, 1:width+1]
 
     save_stl!(
         matrix_to_mesh(ϕ * 0.02),
@@ -112,10 +127,24 @@ function move_vertically!(mesh, image, suffix)
         reverse = false,
         flipxy = true,
     )
-    # plotAsQuiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
+
+    # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reverser=false, reversec=false)
+    plot_as_quiver(
+        mesh,
+        stride = 30,
+        scale = 1.0,
+        max_length = 200,
+        flipxy = true,
+        reverser = false,
+        reversec = false,
+    )
+
+    # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
+    # Tasks are a control flow feature that allows computations to be suspended and resumed in a flexible manner.
+    # We mention them here only for completeness; for a full discussion see Asynchronous Programming.
     march_mesh!(mesh, ϕ)
     save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
 
@@ -141,8 +170,8 @@ function move_horizontally(
     # Coordinates difference
     # Coordinates on the caustics = simple rectangular values in pixels.
     # Coordinates on the lens face comes from topleft field.
-    d_row = repeat(Float64.(1:height+1), 1, width + 1) - mesh.topleft.r
-    d_col = repeat(Float64.(1:width+1)', height + 1, 1) - mesh.topleft.c
+    d_row = mesh.topleft.rows_numbers - mesh.topleft.r
+    d_col = mesh.topleft.cols_numbers - mesh.topleft.c
 
     # true_H is the real distance beteen the surface of the lens and the projection
     # H is the initial distance from the surface of the carved face to the projection screen.
@@ -151,8 +180,8 @@ function move_horizontally(
     # Note: Higher location means closer to the caustics => negative sign
     H = f / Meters_Per_Pixel
 
-    true_H = similar(mesh.topleft.z)
-    @. true_H[:] = -mesh.topleft.z[:] + H
+    true_H = similar(mesh.topleft.h)
+    @. true_H[:] = -mesh.topleft.h[:] + H
 
     # Normals.
     N_row = zeros(Float64, height + 1, width + 1)
@@ -168,10 +197,10 @@ function move_horizontally(
 
     divergence_direction = zeros(Float64, width + 1, height + 1)
     divergence_direction[1:height, 1:width] = div_row + div_col
-    divergence_direction[:, 1] .= 0.0
-    divergence_direction[:, end] .= 0.0
-    divergence_direction[1, :] .= 0.0
-    divergence_direction[end, :] .= 0.0
+    fill_borders!(divergence_direction, 0.0)
+
+    @assert max_sum_abs(divergence_direction) "ALERT: horiz. Δ divergence_direction is too large - max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))"
+
 
     println("Have all the divergences")
 
@@ -183,11 +212,15 @@ function move_horizontally(
         iteration_count % 100 == 0 && println("Converging for divergence: $(max_update)")
 
         old_max_update = max_update
-        ϕ, max_update = relax_vertically(ϕ, divergence_direction)
+        ϕ, max_update = relax_vertically(ϕ, -divergence_direction)
+        @assert max_sum_abs(ϕ) "ALERT: horiz. Δ ϕ is too large - max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))"
+
+
         if abs(max_update) < 1e-6 ||
            abs((max_update - old_max_update) / old_max_update) < 0.01
             println(
-                "Convergence stopped improving at step $(iteration_count) with max_update of $(max_update)",
+                "Convergence stopped improving at step $(iteration_count) ",
+                "with max_update of $(max_update)",
             )
             break
         end
@@ -209,51 +242,64 @@ https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poisso
 """
 function relax_vertically(ϕ::Matrix{Float64}, divergence::Matrix{Float64})
 
-    # ϕ is the size of topleft
+    @assert max_sum_abs(ϕ) "ALERT: relaxation ϕ is too large - max/min = $(maximum(ϕ)) / $(minimum(ϕ))"
+    @assert max_sum_abs(divergence) "ALERT: relaxation divergence is too large - max/min = $(maximum(divergence)) / $(minimum(divergence))"
+
+    @assert any(isnan.(ϕ)) == false "Calling relaxation with a ϕ that contains NaN!!"
+    @assert any(isnan.(divergence)) == false "Calling relaxation with a divergence that contains NaN!!"
+
+
+    # ϕ is of the same size of topleft
     height, width = size(ϕ)
     n_pixels = height * width
     height_average = sum(ϕ) / n_pixels
+
+    # Laplacian
 
     # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
     # Size of ϕ/topleft is h+1, w+1. container adds 1 row/col before and 1 row/col after
     container_height = 1 + height + 1
     container_width = 1 + width + 1
     container = zeros(Float64, container_height, container_width)
+    container[2:container_height-1, 2:container_width-1] .= ϕ
+    @assert max_sum_abs(container) "ALERT: relaxation container is too large - max/min = $(maximum(container)) / $(minimum(container))"
 
-    container[2:container_height-1, 2:container_width-1] .= ϕ[:, :]
-    container[:, begin] .= height_average
-    container[:, end] .= height_average
-    container[begin, :] .= height_average
-    container[end, :] .= height_average
-
-    # Those values are height x width
-    height_up = container[2-1:container_height-1-1, 2:container_width-1]
-    height_down = container[2+1:container_height-1+1, 2:container_width-1]
-    height_left = container[2:container_height-1, 2-1:container_width-1-1]
-    height_right = container[2:container_height-1, 2+1:container_width-1+1]
+    # Those values are all of ϕ's size but shifted in 4 directions
+    height_above = container[2-1:container_height-1-1, 2+0:container_width-1]
+    height_below = container[2+1:container_height-1+1, 2+0:container_width-1]
+    height_left = container[2+0:container_height-1, 2-1:container_width-1-1]
+    height_right = container[2+0:container_height-1, 2+1:container_width-1+1]
 
     # Target position. The target is the current height map smoothed by averaging to which the
     # divergence is added.
-    # target_map is the same size mesh.topleft.
-    target_map = zeros(Float64, height, width)
-    target_map = (height_up + height_down + height_left + height_right) ./ 4.0
-    target_map += divergence
+    # δ_map is the same size as divergence.
+    δ_map = zeros(Float64, size(divergence))
 
-    target_map[:, begin] .= height_average
-    target_map[:, end] .= height_average
-    target_map[begin, :] .= height_average
-    target_map[end, :] .= height_average
+    # δ_map is the Laplacian of the height
+    δ_map = (height_above + height_below + height_left + height_right) / 4.0 - ϕ
+    @assert max_sum_abs(δ_map) "ALERT: relaxation δ_map as (average - ϕ) is too large - max/min = $(maximum(δ_map)) / $(minimum(δ_map))"
+
+    # This has to converge towards the divergence. Difference to calculate speed of the descent.
+    δ_map -= divergence
+    @assert max_sum_abs(δ_map) "ALERT: relaxation δ_map as including divergence is too large - max/min = $(maximum(δ_map)) / $(minimum(δ_map))"
+
+    # height_div, width_div = size(divergence)
+    # @. target_map[height_div, width_div] += divergence / 4.0
+    fill_borders!(δ_map, 0.0)
 
     # Let the heightmap converge towards the target at a slow rate.
-    new_ϕ = ϕ + ω .* (target_map - ϕ)
+    # new_ϕ = ϕ + ω .* δ_map
+    new_ϕ = zeros(Float64, size(divergence))
+
+    # new_ϕ = ϕ + 1.94 * δ_map
+    new_ϕ = ϕ + 0.2 * δ_map
+    @assert any(isnan.(new_ϕ)) == false "new_ϕ contains NaN!!"
 
     max_update = maximum(abs.(new_ϕ))
-    # println("Minimum / Maximum of the height map after relaxation.")
-    # println("\tMax update = $( maximum(ϕ) )")
-    # println("\tMin update = $( minimum(ϕ) )")
-    @assert !isnan(max_update) """ MAX UPDATE IS NOT A NaN!!! \n
-                                   Max height = $( maximum(ϕ) )  --  Min height = $( minimum(ϕ) )  --  Height average = $(height_average) \n
-                                   Max divergence = $( maximum(divergence) )  --  Min divergence = $( minimum(divergence) )"""
+    @assert !isnan(max_update) """ MAX UPDATE IS NOT A NaN!!!
+                                   Max height = $( maximum(ϕ) )  --  Min height = $( minimum(ϕ) )  --  Height average = $(height_average)
+                                   Max divergence = $( maximum(divergence) )  --  Min divergence = $( minimum(divergence) )
+                                   """
 
     return new_ϕ, max_update
 end
@@ -263,7 +309,7 @@ end
 $(SIGNATURES)
 
 A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
-area in the x, y plane. z is ignored.
+area in the x, y plane. h is ignored.
 
 The function returns a matrix with the quantity of light coming from each 'rectangle'  around a pixel. That 'rectangle'
 has been shifted and flexed around.
@@ -274,8 +320,8 @@ function get_area_pixels(mesh::FaceMesh)
     pixel_areas = zeros(Float64, size(mesh))
 
     for ci ∈ CartesianIndices(pixel_areas)
-        top_tri_area = area(top_triangle3D(mesh, ci)...)
-        bot_tri_area = area(bot_triangle3D(mesh, ci)...)
+        top_tri_area = area(triangle3D(mesh, ci, :top)...)
+        bot_tri_area = area(triangle3D(mesh, ci, :bottom)...)
 
         isnan(top_tri_area) &&
             println("NaN area at $(ci) for top triangle $(top_triangle3D(mesh, ci)).")
@@ -297,10 +343,13 @@ function quantifyLoss!(D, suffix, img)
     println("\tMinimum loss: $(minimum(D))")
     println("\tMaximum loss: $(maximum(D))")
 
+    normalised_D_max = D ./ maximum(D)
+    normalised_D_min = D ./ minimum(D)
+
     blue = zeros(size(D))
-    blue[D.>0] = D[D.>0]
+    blue[D.>0] = normalised_D_max[D.>0]
     red = zeros(size(D))
-    red[D.<0] = -D[D.<0]
+    red[D.<0] = -normalised_D_min[D.<0]
     green = zeros(size(D))
 
     # println(size(blue))
@@ -335,23 +384,23 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
 
     # To make the calculation simpler, everything is translated so that A is at the
     # origin of the plane and its velocity is nil.
-    Bx = p2.x - p1.x
-    By = p2.y - p1.y
-    Cx = p3.x - p1.x
-    Cy = p3.y - p1.y
+    Br = p2.r - p1.r
+    Bc = p2.c - p1.c
+    Cr = p3.r - p1.r
+    Cc = p3.c - p1.c
 
-    t_vBx = p2.vx - p1.vx
-    t_vBy = p2.vy - p1.vy
-    t_vCx = p3.vx - p1.vx
-    t_vCy = p3.vy - p1.vy
+    t_vBr = p2.vr - p1.vr
+    t_vBc = p2.vc - p1.vc
+    t_vCr = p3.vr - p1.vr
+    t_vCc = p3.vc - p1.vc
 
-    # After this, given that Ax = Ay = t_vAx = t_vAy = 0, the area is nil iff
-    # (Bx + t_vBx) (Cy + t_vCy )- (Cx + t_vCx) (By + t_vBy) = 0.
+    # After this, given that Ar = Ac = t_vAr = t_vAc = 0, the area is nil iff
+    # (Br + t_vBr) (Cc + t_vCc ) - (Cr + t_vCr) (Bc + t_vBc) = 0.
     # After expansion and reshuffling to have a quadratic equation where t
     # is the variable, the coefficients of that equation are:
-    a = t_vCy * t_vBx - t_vBy * t_vCx
-    b = -By * t_vCx - Cx * t_vBy + Bx * t_vCy + Cy * t_vBx
-    c = Bx * Cy - Cx * By
+    a = t_vCc * t_vBr - t_vBc * t_vCr
+    b = -Bc * t_vCr - Cr * t_vBc + Br * t_vCc + Cc * t_vBr
+    c = Br * Cc - Cr * Bc
 
     # if a = 0, this is just a linear equation.
     if a == 0
@@ -401,46 +450,63 @@ function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
     # of the same size.
     # Warning: The indices are necessary because topleft and ∇ϕ are of different sizes
     # CHECK SIGNS!
-    mesh.topleft.vr[1:height, 1:width] .= ∇ϕᵤ[1:height, 1:width]
-    mesh.topleft.vc[1:height, 1:width] .= ∇ϕᵥ[1:height, 1:width]
+    mesh.topleft.vr[1:height, 1:width] .= -∇ϕᵤ[1:height, 1:width]
+    mesh.topleft.vc[1:height, 1:width] .= -∇ϕᵥ[1:height, 1:width]
 
-    # The velocity matrix was initialized with zeros everywhere. We nevertheless ovewrite them just in case...
-    fill_borders!(mesh.topleft.vr, 0.0)
-    fill_borders!(mesh.topleft.vc, 0.0)
+    # Just in case...
+    reset_border_values!(mesh.topleft)
 
     # Basically infinity time to shrink a triangle to nothing.
     min_positive_t = Inf
     list_min_pos_t = zeros(Float64, (height - 2) * (width - 2))
 
-    mesh_x = copy(mesh.topleft.r)
+    t1 = zeros(Float64, height, width)
+    t2 = zeros(Float64, height, width)
+
+    mesh_r = copy(mesh.topleft.r)
+    mesh_c = copy(mesh.topleft.c)
+    mesh_h = copy(mesh.topleft.h)
     for row ∈ 1:height-1, col ∈ 1:width-1
         # # Jiggle each point in a random order.
         # for (row, col) ∈ shuffle([(r, c) for r ∈ 2:height-1, c ∈ 2:width-1])
 
         # Get the time, at that velocity, for the area of the triangle to be nil.
         # We are only interested by positive values to only move in the direction of the gradient
-        for triangle ∈ [top_triangle3D(mesh, row, col), bot_triangle3D(mesh, row, col)]
+        for triangle ∈
+            [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom)]
             t1, t2 = find_maximum_t(triangle)
-            for t ∈ [t1, t2]
-                if (!ismissing(t)) && (0 < t < min_positive_t)
-                    min_positive_t = t
-                end
-            end
-
-            δ = min_positive_t / 2.0
-            mesh.topleft.r[row, col] -= δ * ∇ϕᵤ[row, col]
-            mesh.topleft.c[row, col] -= δ * ∇ϕᵥ[row, col]
+            @assert typeof(t1) == Float64 && typeof(t2) == Float64 "Maximum times are not numerical at $(row), $(col)"
         end
+
         # list_min_pos_t[(row-1)+(col-2)*(width-2)]
         # println("March mesh δ: $(δ)")
     end
 
-    mesh.topleft.r[1:height, 1] .= 1:height
-    mesh.topleft.r[1:height, width] .= 1:height
-    mesh.topleft.c[1, 1:width] .= 1:width
-    mesh.topleft.c[height, 1:width] .= 1:width
+    t1 = max.(t1, 0.0)
+    t2 = max.(t2, 0.0)
 
-    print("Average mesh changes on x = $(sum(abs.(mesh.topleft.r - mesh_x)))")
+    min_positive_t = min(minimum(t1), minimum(t2))
+
+    δ = min_positive_t / 2.0
+    mesh.topleft.r -= δ .* ∇ϕᵤ
+    mesh.topleft.c -= δ .* ∇ϕᵥ
+
+    # reset_border_values!(mesh.topleft)
+
+    # Reset the border at the fixed values fixed coordinates.
+    reset_border_values!(mesh.topleft)
+
+    println(
+        "Average mesh changes on row = $(sum(abs.(mesh.topleft.r - mesh_r)) / (height * width))",
+    )
+
+    println(
+        "Average mesh changes on col = $(sum(abs.(mesh.topleft.c - mesh_c)) / (height * width))",
+    )
+
+    println(
+        "Average mesh changes on height = $(sum(abs.(mesh.topleft.h - mesh_h)) / (height * width))",
+    )
 
     # Modify the mesh triangles but ensuring that we are far from destroying any of them with a nil area.
     # Use the maximum change possible (negative or positive)
@@ -495,10 +561,10 @@ function matrix_to_mesh(ϕ::Matrix{Float64})
     mesh = FaceMesh(height, width)
 
     # 1 more topleft than pixels! Therefore compiler needs to specify exact indices.
-    mesh.topleft.z[1:height, 1:width] .= ϕ[1:height, 1:width]
+    mesh.topleft.h[1:height, 1:width] .= ϕ[1:height, 1:width]
 
     # The borders' height is forced at 0.
-    fill_borders!(mesh.topleft.z, 0.0)
+    reset_border_values!(mesh.topleft)
 
     return mesh
 end
@@ -539,7 +605,7 @@ function create_solid(
     bottom_mesh = FaceMesh(height, width)
     bottom_mesh.topleft.r[:] .= rows[:]
     bottom_mesh.topleft.c[:] .= cols[:]
-    bottom_mesh.topleft.z[:] .= -Bottom_Offset
+    bottom_mesh.topleft.h[:] .= -Bottom_Offset
     bottom_mesh.topleft.vr[:] .= 0.0
     bottom_mesh.topleft.vr[:] .= 0.0
 

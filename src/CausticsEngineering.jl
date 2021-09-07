@@ -25,13 +25,6 @@ function main()
     return engineer_caustics(img)
 end
 
-
-"""
-$(SIGNATURES)
-"""
-main()
-
-
 export Vertex3D, FieldVertex3D, FaceMesh, main, engineer_caustics
 
 end # End module

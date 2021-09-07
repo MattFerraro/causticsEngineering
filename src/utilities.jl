@@ -7,12 +7,12 @@ $(TYPEDEF)
 struct Vertex3D
     r::Float64
     c::Float64
-    z::Float64
+    h::Float64
 
     vr::Float64
     vc::Float64
 
-    Vertex3D(r, c, z, vr, vc) = new(r, c, z, vr, vc)
+    Vertex3D(r, c, h, vr, vc) = new(r, c, h, vr, vc)
     Vertex3D() = new(0.0, 0.0, 0.0, 0.0, 0.0)
 end
 
@@ -22,8 +22,8 @@ $(SIGNATURES)
 function dist(p1::Tuple{Float64,Float64,Float64}, p2::Tuple{Float64,Float64,Float64})
     dr = p2[1] - p1[1]
     dc = p2[2] - p1[2]
-    dz = p2[3] - p1[3]
-    return sqrt(dr^2 + dc^2 + dz^2)
+    dh = p2[3] - p1[3]
+    return sqrt(dr^2 + dc^2 + dh^2)
 end
 
 """
@@ -31,27 +31,33 @@ $(SIGNATURES)
 """
 function dist(p1::Vertex3D, p2::Vertex3D)
     dr = p2.r - p1.r
+    @assert 0.0 <= abs(dr) <= 1e6 "Distance (row coordinate = $(dr)) between $(p1) and $(p2) makes no sense "
+
     dc = p2.c - p1.c
-    dz = p2.z - p1.z
-    return sqrt(dr^2 + dc^2 + dz^2)
+    @assert 0.0 <= abs(dc) <= 1e6 "Distance (col coordinate = $(dc)) between $(p1) and $(p2) makes no sense "
+
+    dh = p2.h - p1.h
+    @assert 0.0 <= abs(dh) <= 1e6 "Distance (height coordinate = $(dh)) between $(p1) and $(p2) makes no sense "
+
+    return sqrt(dr^2 + dc^2 + dh^2)
 end
 
 
-"""
-$(SIGNATURES)
-"""
-function area(
-    p1::Tuple{Float64,Float64,Float64},
-    p2::Tuple{Float64,Float64,Float64},
-    p3::Tuple{Float64,Float64,Float64},
-)
-    a = dist(p1, p2)
-    b = dist(p2, p3)
-    c = dist(p3, p1)
-    s = (a + b + c) / 2.0
+# """
+# $(SIGNATURES)
+# """
+# function area(
+#     p1::Tuple{Float64,Float64,Float64},
+#     p2::Tuple{Float64,Float64,Float64},
+#     p3::Tuple{Float64,Float64,Float64},
+# )
+#     a = dist(p1, p2)
+#     b = dist(p2, p3)
+#     c = dist(p3, p1)
+#     s = (a + b + c) / 2.0
 
-    return sqrt(s * (s - a) * (s - b) * (s - c))
-end
+#     return sqrt(s * (s - a) * (s - b) * (s - c))
+# end
 
 """
 $(SIGNATURES)
@@ -61,6 +67,9 @@ function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
     b = dist(v2, v3)
     c = dist(v3, v1)
     s = (a + b + c) / 2.0
+
+    surface = s * (s - a) * (s - b) * (s - c)
+    @assert surface >= 0.0 "Negative surface for $(v1),  $(v2),  $(v3)"
 
     return sqrt(s * (s - a) * (s - b) * (s - c))
 end
@@ -72,7 +81,7 @@ $(SIGNATURES)
 A midpoint is the average between two points
 """
 midpoint(p1::Vertex3D, p2::Vertex3D) =
-    Vertex3D((p1.r + p2.r) / 2.0, (p1.c + p2.c) / 2.0, (p1.z + p2.z) / 2.0, 0.0, 0.0)
+    Vertex3D((p1.r + p2.r) / 2.0, (p1.c + p2.c) / 2.0, (p1.h + p2.h) / 2.0, 0.0, 0.0)
 
 
 """
@@ -83,7 +92,7 @@ Centroid of three points.
 centroid(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D) = Vertex3D(
     (p1.r + p2.r + p3.r) / 3.0,
     (p1.c + p2.c + p3.c) / 3.0,
-    (p1.z + p2.z + p3.z) / 3.0,
+    (p1.h + p2.h + p3.h) / 3.0,
     0,
     0,
 )
@@ -110,7 +119,7 @@ Origin is top left, going right and down .`x` goes horizontal and follows column
 
 # Velocity
 
-Velocity vector along `x` and `y` (velocity along z not necessary).
+Velocity vector along `x` and `y` (velocity along h not necessary).
 
 Implementation is a struc of arrays. Easier to vectorise.
 
@@ -119,33 +128,65 @@ mutable struct FieldVertex3D
     size::Tuple{Int,Int}
 
     r::AbstractMatrix{Float64}
-    y::AbstractMatrix{Float64}
-    z::AbstractMatrix{Float64}
+    c::AbstractMatrix{Float64}
+    h::AbstractMatrix{Float64}
 
     vr::AbstractMatrix{Float64}
     vc::AbstractMatrix{Float64}
 
-    function FieldVertex3D(height, width)
-        # mr = zeros(Float64, height + 1, width + 1)
-        # my = zeros(Float64, height + 1, width + 1)
-        # mz = zeros(Float64, height + 1, width + 1)
+    rows_numbers::AbstractMatrix{Float64}
+    cols_numbers::AbstractMatrix{Float64}
 
-        # mvr = zeros(Float64, height + 1, width + 1)
-        # mvc = zeros(Float64, height + 1, width + 1)
+    # FieldVertex3D(size, mr, mc, mh, mvr, mvc, rows_numbers, cols_numbers) = new(size, mr, mc, mh, mvr, mvc, rows_numbers, cols_numbers)
 
-        rows = repeat(Float64.(1:height+1), 1, width + 1)
-        cols = repeat(Float64.(1:width+1)', height + 1, 1)
-
-        mr = rows + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-        my = cols + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-        mz = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-
-        mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-        mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-
-        new((height, width), mr, my, mz, mvr, mvc)
-    end
 end
+
+
+function FieldVertex3D(height, width)
+    # mr = zeros(Float64, height + 1, width + 1)
+    # my = zeros(Float64, height + 1, width + 1)
+    # mh = zeros(Float64, height + 1, width + 1)
+
+    # mvr = zeros(Float64, height + 1, width + 1)
+    # mvc = zeros(Float64, height + 1, width + 1)
+
+    rows_numbers = repeat(Float64.(1:height+1), 1, width + 1)
+    cols_numbers = repeat(Float64.(1:width+1)', height + 1, 1)
+
+    mr = rows_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    mc = cols_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    mh = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+
+    fv = FieldVertex3D((height, width), mr, mc, mh, mvr, mvc, rows_numbers, cols_numbers)
+    reset_border_values!(fv)
+    return fv
+end
+
+
+"""
+$(SIGNATURES)
+
+Return the dimension of the mesh as the number of rectangles. It does not return the number of corner points.
+"""
+function reset_border_values!(topleft::FieldVertex3D)
+    # Reset the border at the fixed values fixed coordinates.
+    topleft.r[1, :] .= topleft.rows_numbers[1, :]
+    topleft.r[end, :] .= topleft.rows_numbers[end, :]
+    topleft.r[:, 1] .= topleft.rows_numbers[:, 1]
+    topleft.r[:, end] .= topleft.rows_numbers[:, end]
+
+    topleft.c[1, :] .= topleft.cols_numbers[1, :]
+    topleft.c[end, :] .= topleft.cols_numbers[end, :]
+    topleft.c[:, 1] .= topleft.cols_numbers[:, 1]
+    topleft.c[:, end] .= topleft.cols_numbers[:, end]
+
+    fill_borders!(topleft.h, 0.0)
+    fill_borders!(topleft.vr, 0.0)
+    fill_borders!(topleft.vc, 0.0)
+end
+
 
 Base.size(fv::FieldVertex3D) = FieldVertex3D.size
 
@@ -160,7 +201,7 @@ function Vertex3D(fv::FieldVertex3D, row, col)
         Vertex3D(
             fv.r[row, col],
             fv.y[row, col],
-            fv.z[row, col],
+            fv.h[row, col],
             fv.vr[row, col],
             fv.vc[row, col],
         )
@@ -223,6 +264,8 @@ end
 
 
 
+
+
 """
 $(SIGNATURES)
 
@@ -253,94 +296,53 @@ $(SIGNATURES)
 
 Converts a triangle as a triplet of references to mesh vertices to a triplet of 3D coordinates.
 """
-function top_triangle3D(mesh::FaceMesh, row::Int, col::Int)
+function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:bottom})
     height, width = size(mesh)
     if 1 <= row <= height && 1 <= col <= width
-        t = mesh.toptriangles[row, col]
+        if side == :top
+            t = mesh.toptriangles[row, col]
+        elseif side == :bottom
+            t = mesh.bottriangles[row, col]
+        end
+
         t1_row, t1_col = t[1]
         t2_row, t2_col = t[2]
         t3_row, t3_col = t[3]
 
-        p1 = Vertex3D(
-            mesh.topleft.r[t1_row, t1_col],
-            mesh.topleft.c[t1_row, t1_col],
-            mesh.topleft.z[t1_row, t1_col],
-            mesh.topleft.vr[t1_row, t1_col],
-            mesh.topleft.vc[t1_row, t1_col],
-        )
-        p2 = Vertex3D(
-            mesh.topleft.r[t2_row, t2_col],
-            mesh.topleft.c[t2_row, t2_col],
-            mesh.topleft.z[t2_row, t2_col],
-            mesh.topleft.vr[t2_row, t2_col],
-            mesh.topleft.vc[t2_row, t2_col],
-        )
-        p3 = Vertex3D(
-            mesh.topleft.r[t3_row, t3_col],
-            mesh.topleft.c[t3_row, t3_col],
-            mesh.topleft.z[t3_row, t3_col],
-            mesh.topleft.vr[t3_row, t3_col],
-            mesh.topleft.vc[t3_row, t3_col],
-        )
+        r1 = mesh.topleft.r[t1_row, t1_col]
+        c1 = mesh.topleft.c[t1_row, t1_col]
+        h1 = mesh.topleft.h[t1_row, t1_col]
+        vr1 = mesh.topleft.vr[t1_row, t1_col]
+        vc1 = mesh.topleft.vc[t1_row, t1_col]
+        @assert r1^2 + c1^2 + h1^2 <= 1e12 "Coordinate $(r1), $(c1), $(h1) of point #1 at $(row), $(col) side = $(side) makes no sense "
+
+        r2 = mesh.topleft.r[t2_row, t2_col]
+        c2 = mesh.topleft.c[t2_row, t2_col]
+        h2 = mesh.topleft.h[t2_row, t2_col]
+        vr2 = mesh.topleft.vr[t2_row, t2_col]
+        vc2 = mesh.topleft.vc[t2_row, t2_col]
+        @assert r2^2 + c2^2 + h2^2 <= 1e12 "Coordinate $(r2), $(c2), $(h2) of point #2 at $(row), $(col) side = $(side) makes no sense "
+
+        r3 = mesh.topleft.r[t3_row, t3_col]
+        c3 = mesh.topleft.c[t3_row, t3_col]
+        h3 = mesh.topleft.h[t3_row, t3_col]
+        vr3 = mesh.topleft.vr[t3_row, t3_col]
+        vc3 = mesh.topleft.vc[t3_row, t3_col]
+        @assert r3^2 + c3^2 + h3^2 <= 1e12 "Coordinate $(r3), $(c3), $(h3) of point #3 at $(row), $(col) side = $(side) makes no sense "
+
+        p1 = Vertex3D(r1, c1, h1, vr1, vc1)
+        p2 = Vertex3D(r2, c2, h2, vr2, vc2)
+        p3 = Vertex3D(r3, c3, h3, vr3, vc3)
         return (p1, p2, p3)
     else
-        return missing
+        # return (missing, missing, missing)
+        @assert false "Coordinates out of bounds at $(row), $(col)"
     end
 end
 
-top_triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}) = top_triangle3D(mesh, ci[1], ci[2])
+triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}, side = Union{:top,:bottom}) =
+    triangle3D(mesh, ci[1], ci[2], side)
 
-
-function bot_triangle3D(mesh::FaceMesh, row::Int, col::Int)
-    height, width = size(mesh)
-    if 1 <= row <= height && 1 <= col <= width
-        t = mesh.bottriangles[row, col]
-        t1_row, t1_col = t[1]
-        t2_row, t2_col = t[2]
-        t3_row, t3_col = t[3]
-
-        p1 = Vertex3D(
-            mesh.topleft.r[t1_row, t1_col],
-            mesh.topleft.c[t1_row, t1_col],
-            mesh.topleft.z[t1_row, t1_col],
-            mesh.topleft.vr[t1_row, t1_col],
-            mesh.topleft.vc[t1_row, t1_col],
-        )
-        p2 = Vertex3D(
-            mesh.topleft.r[t2_row, t2_col],
-            mesh.topleft.c[t2_row, t2_col],
-            mesh.topleft.z[t2_row, t2_col],
-            mesh.topleft.vr[t2_row, t2_col],
-            mesh.topleft.vc[t2_row, t2_col],
-        )
-        p3 = Vertex3D(
-            mesh.topleft.r[t3_row, t3_col],
-            mesh.topleft.c[t3_row, t3_col],
-            mesh.topleft.z[t3_row, t3_col],
-            mesh.topleft.vr[t3_row, t3_col],
-            mesh.topleft.vc[t3_row, t3_col],
-        )
-        return (p1, p2, p3)
-    else
-        return missing
-    end
-end
-
-bot_triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}) = bot_triangle3D(mesh, ci[1], ci[2])
-
-
-function triangle3D(mesh::FaceMesh, ci::CartesianIndex; side = Union{:top,:bottom})
-    if side == :top
-        return top_triangle3D(mesh, ci)
-    elseif side == :bottom
-        return bot_triangle3D(mesh, ci)
-    else
-        return missing
-    end
-end
-
-triangle3D(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom}) =
-    triangle3D(mesh, CartesianIndex(row, col); side)
 
 
 """
@@ -398,3 +400,6 @@ function area(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom})
         return missing
     end
 end
+
+
+max_sum_abs(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1_024

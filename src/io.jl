@@ -33,7 +33,7 @@ function save_stl!(
     mesh::FaceMesh,
     filename::String;
     scale = 1.0,
-    scalez = 1.0,
+    scaleh = 1.0,
     reverse = false,
     flipxy = false,
 )
@@ -51,26 +51,14 @@ function save_stl!(
             n = centroid(top_triangle)
 
             if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
+                println(io, "v $(n.c * scale) $(n.r * scale) $(n.h * scaleh)")
             else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
+                println(io, "v $(n.r * scale) $(n.c * scale) $(n.h * scaleh)")
             end
 
             # Bottom triangle
             bot_triangle = bottom_triangle(mesh, row, col)
             n = centroid(bot_triangle)
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
 
             if flipxy
                 println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
@@ -102,10 +90,10 @@ function stl_2_mesh(filename)
     for line in vertexLines
         count += 1
         elements = split(line, " ")
-        x = parse(Float64, elements[2])
-        y = parse(Float64, elements[3])
-        z = parse(Float64, elements[4]) * 10
-        pt = Vertex3D(x, y, z, 0, 0)
+        r = parse(Float64, elements[2])
+        c = parse(Float64, elements[3])
+        h = parse(Float64, elements[4]) * 10
+        pt = Vertex3D(r, c, h, 0, 0)
         nodeList[count] = pt
     end
 

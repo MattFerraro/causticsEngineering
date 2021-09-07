@@ -32,6 +32,11 @@ global Meters_Per_Pixel = Caustics_Height / N_Pixel_Height
 
 
 # calculation
-const ω = 0.50
+const ω = 1.94
 # const ω = 2 / (1 + π / sqrt(N_Pixel_Height * N_Pixel_Width))
 const N_Iterations_Convergence = 10_000        # CHECK: What is a reasonable number of iterations?
+
+# # Global allocations to avoid excessive re-allocations. USEFUL ???
+# global container = zeros(Float64, 1_024, 1_024)
+# global divergence_intensity = zeros(Float64, 1_024, 1_024)
+# global target_map = zeros(Float64, 1_024, 1_024)
