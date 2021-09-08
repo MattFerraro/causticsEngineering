@@ -106,40 +106,28 @@ $(SIGNATURES)
 
 This function saves the mesh object in stl format.
 """
-function saveObj!(
-    mesh::Mesh,
-    filename::String;
-    scale = 1.0,
-    scalez = 1.0,
-    reverse = false,
-    flipxy = false,
-)
-    open(filename, "w") do io
-        for vertex in mesh.nodes
-            if flipxy
-                println(
-                    io,
-                    "v $(vertex.y * scale) $(vertex.x * scale) $(vertex.z * scalez)",
-                )
-            else
-                println(
-                    io,
-                    "v $(vertex.x * scale) $(vertex.y * scale) $(vertex.z * scalez)",
-                )
-            end
-        end
-
-        for face in mesh.triangles
-            if reverse
-                println(io, "f $(face.pt3) $(face.pt2) $(face.pt1)")
-            else
-                println(io, "f $(face.pt1) $(face.pt2) $(face.pt3)")
-            end
-        end
-
-        println(io, "dims $(mesh.width) $(mesh.height)")
-    end
-end
+function saveObj!(mesh::Mesh, filename::String; scale=1.0, scalez=1.0, reverse=false, flipxy=false)
+    # This function saves the mesh object in stl format
+      open(filename, "w") do io
+          for vertex in mesh.nodes
+              if flipxy
+                  println(io, "v ", vertex.y * scale, " ", vertex.x * scale, " ", vertex.z * scalez)
+              else
+                  println(io, "v ", vertex.x * scale, " ", vertex.y * scale, " ", vertex.z * scalez)
+              end
+          end
+  
+          for face in mesh.triangles
+              if reverse
+                  println(io, "f ", face.pt3, " ", face.pt2, " ", face.pt1)
+              else
+                  println(io, "f ", face.pt1, " ", face.pt2, " ", face.pt3)
+              end
+          end
+  
+          println(io, "dims ", mesh.width, " ", mesh.height)
+      end
+  end
 
 
 """
@@ -536,15 +524,14 @@ end
 """
 $(SIGNATURES)
 """
-function setHeights!(mesh, heights, heightScale = 1.0, heightOffset = 50)
+function setHeights!(mesh, heights, heightScale=1.0, heightOffset=10)
     width, height = size(heights)
-
-    for y = 1:height, x = 1:width
-        mesh.nodeArray[x, y].z = heights[x, y] * heightScale + heightOffset
-        if x == 100 && y == 100
-            println(
-                "Example heights: $(heights[x, y])  and  $(heights[x, y] * heightScale) and $(heights[x, y] * heightScale + heightOffset)",
-            )
+    for y = 1:height
+        for x = 1:width
+            mesh.nodeArray[x, y].z = heights[x, y] * heightScale + heightOffset
+            if x == 100 && y == 100
+                println("Example heights: $(heights[x, y])  and  $(heights[x, y] * heightScale) and $(heights[x, y] * heightScale + heightOffset)")
+            end
         end
     end
 
@@ -567,36 +554,7 @@ end
 """
 $(SIGNATURES)
 """
-function setHeights(mesh, heights)
-    width = mesh.width
-    height = mesh.height
-    nodes = Vector{Point3D}(undef, size(mesh.nodes))
-    nodeArray = Matrix{Point3D}(undef, 0, 0)
-    triangles = Vector{Triangle}(undef, size(mesh.triangles))
-    scale = 1
-
-    count = 1
-    w, h = size(heights)
-    for y = 1:height
-        for x = 1:width
-            count += 1
-            point = mesh.nodes[count]
-
-            z = heights[x, y]
-
-            newPoint = Point3D(point.x * scale, point.y * scale, z * scale, 0, 0)
-            nodes[count] = newPoint
-        end
-    end
-
-    return Mesh(nodes, nodeArray, triangles, width, height)
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function solidify(inputMesh, offset = 100)
+function solidify(inputMesh, offset=100)
     width = inputMesh.width
     height = inputMesh.height
     totalNodes = width * height * 2
@@ -607,15 +565,13 @@ function solidify(inputMesh, offset = 100)
     # imagine a 4x4 image. 4 * 2 + 2 * 2 = 12
     numEdgeNodes = width * 2 + (height - 2) * 2
 
-    numTrianglesTop = (width - 1) * (height - 1) * 2
+    numTrianglesTop = (width-1)*(height-1) * 2
     numTrianglesBottom = numTrianglesTop
     numTrianglesEdges = numEdgeNodes * 2
 
     totalTriangles = numTrianglesBottom + numTrianglesTop + numTrianglesEdges
 
-    println(
-        "Specs: $(width)  $(height)  $(totalNodes)  $(numEdgeNodes)  $(numTrianglesBottom) $(totalTriangles)",
-    )
+    println("Specs: $(width)  $(height)  $(totalNodes)  $(numEdgeNodes)  $(numTrianglesBottom) $(totalTriangles)")
 
     # Build the bottom surface
     count = 1
@@ -648,12 +604,12 @@ function solidify(inputMesh, offset = 100)
 
     println("We now have $(count-1) valid nodes")
 
-    # Build the triangles for the bottom surface
     triangles = Vector{Triangle}(undef, totalTriangles)
+    # Build the triangles for the bottom surface
     count = 1
-    for y = 1:(height-1)
-        for x = 1:(width-1)
-            # here x and y establish the column of squares we're in
+    for y = 1:(height - 1)
+        for x = 1:(width - 1)
+          # here x and y establish the column of squares we're in
             index_ul = (y - 1) * width + x
             index_ur = index_ul + 1
 
@@ -669,15 +625,13 @@ function solidify(inputMesh, offset = 100)
 
     println("We've filled up $(count-1) triangles")
     if count != numTrianglesBottom + 1
-        println(
-            "Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom + 1)",
-        )
+        println("Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom + 1)")
     end
 
     # Build the triangles for the top surface
-    for y = 1:(height-1)
-        for x = 1:(width-1)
-            # here x and y establish the column of squares we're in
+    for y = 1:(height - 1)
+        for x = 1:(width - 1)
+          # here x and y establish the column of squares we're in
             index_ul = (y - 1) * width + x + totalNodes / 2
             index_ur = index_ul + 1
 
@@ -695,7 +649,7 @@ function solidify(inputMesh, offset = 100)
 
     # Build the triangles to close the mesh
     x = 1
-    for y = 1:(height-1)
+    for y = 1:(height - 1)
         ll = (y - 1) * width + x
         ul = ll + totalNodes / 2
         lr = y * width + x
@@ -707,7 +661,7 @@ function solidify(inputMesh, offset = 100)
     end
 
     x = width
-    for y = 1:(height-1)
+    for y = 1:(height - 1)
         ll = (y - 1) * width + x
         ul = ll + totalNodes / 2
         lr = y * width + x
@@ -719,7 +673,7 @@ function solidify(inputMesh, offset = 100)
     end
 
     y = 1
-    for x = 2:width
+    for x = 2: width
         ll = (y - 1) * width + x
         ul = ll + totalNodes / 2
         lr = (y - 1) * width + (x - 1)
@@ -731,7 +685,7 @@ function solidify(inputMesh, offset = 100)
     end
 
     y = height
-    for x = 2:width
+    for x = 2: width
         ll = (y - 1) * width + x
         ul = ll + totalNodes / 2
         lr = (y - 1) * width + (x - 1)
@@ -742,7 +696,7 @@ function solidify(inputMesh, offset = 100)
         count += 1
     end
 
-    return Mesh(nodeList, nodeArrayBottom, triangles, width, height)
+    Mesh(nodeList, nodeArrayBottom, triangles, width, height)
 end
 
 
@@ -761,53 +715,68 @@ function findSurface(mesh, image, f, imgWidth)
     # η = 1.49
     n₂ = 1
     n₁ = 1.49
-    Nx = zeros(Float64, width + 1, height + 1)
-    Ny = zeros(Float64, width + 1, height + 1)
+    Nx = zeros(width + 1, height + 1)
+    Ny = zeros(width + 1, height + 1)
 
-    for j = 1:height, i = 1:width
-        node = mesh.nodeArray[i, j]
-        dx = (node.ix - node.x) * metersPerPixel
-        dy = (node.iy - node.y) * metersPerPixel
+    for j = 1:height
+        for i = 1:width
+            node = mesh.nodeArray[i, j]
+            dx = (node.ix - node.x) * metersPerPixel
+            dy = (node.iy - node.y) * metersPerPixel
 
-        little_h = node.z * metersPerPixel
-        H_minus_h = H - little_h
-        dz = H_minus_h
+            little_h = node.z * metersPerPixel
+            H_minus_h = H - little_h
+            dz = H_minus_h
 
 
-        # k = η * sqrt(dx * dx + dy * dy + H_minus_h * H_minus_h) - H_minus_h
-        # Nx[i, j] = 1/k * dx
-        # Ny[i, j] = 1/k * dy
-        Ny[i, j] = tan(atan(dy / dz) / (n₁ - 1))
-        Nx[i, j] = tan(atan(dx / dz) / (n₁ - 1))
+            # k = η * sqrt(dx * dx + dy * dy + H_minus_h * H_minus_h) - H_minus_h
+            # Nx[i, j] = 1/k * dx
+            # Ny[i, j] = 1/k * dy
+            Ny[i, j] = tan(atan(dy / dz) / (n₁ - 1))
+            Nx[i, j] = tan(atan(dx / dz) / (n₁ - 1))
+
+
+        end
     end
 
-
+    divergence = zeros(width, height)
     # We need to find the divergence of the Vector field described by Nx and Ny
-    divergence = zeros(Float64, width, height)
 
-    for j = 1:height, i = 1:width
-        δx = (Nx[i+1, j] - Nx[i, j])
-        δy = (Ny[i, j+1] - Ny[i, j])
-        divergence[i, j] = δx + δy
-
-        i == 100 && j == 100 && println("div: $(divergence[i, j])")
+    for j = 1:height
+        for i = 1:width
+            δx = (Nx[i+1, j] - Nx[i, j])
+            δy = (Ny[i, j+1] - Ny[i, j])
+            divergence[i, j] = δx + δy
+        end
     end
     println("Have all the divergences")
+    println("Divergence sum: $(sum(divergence))")
+    divergence .-= sum(divergence) / (width*height)
 
-    h = zeros(Float64, width, height)
+    h = zeros(width, height)
     max_update = 0
     for i = 1:10240/4
         max_update = relax!(h, divergence)
 
-        i % 100 == 0 && println(max_update)
-        max_update < 0.00001 &&
+        if i % 100 == 0
+            println(max_update)
+        end
+        if max_update < 0.00001
             println("Convergence reached at step $(i) with max_update of $(max_update)")
-        break
+            break
+        end
     end
-    # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
-    return h, metersPerPixel
-end
 
+    println("HEIGHT STATS")
+    h .-= sum(h) / (width * height)
+    println(minimum(h))
+    println(maximum(h))
+    println(sum(h))
+    println("-----------")
+
+    # saveObj(matrix_to_mesh(h / 10), "heightmap.obj")
+    h, metersPerPixel
+end
 
 """
 $(SIGNATURES)
@@ -959,14 +928,13 @@ function engineer_caustics(img)
 
     h, metersPerPixel = findSurface(meshy, img3, 1.0, artifactSize)
 
-    setHeights!(meshy, h, 1.0)
-    # newMesh = setHeights(meshy, h)
+    setHeights!(meshy, h, 1.0, 10)
 
     solidMesh = solidify(meshy)
     saveObj!(
         solidMesh,
         "./examples/original_image.obj",
-        scale = 1 / grid_definition * artifactSize,
+        scale = 1 / 512 * artifactSize,
         scalez = 1 / 512.0 * artifactSize,
     )
 
