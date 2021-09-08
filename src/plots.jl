@@ -17,10 +17,10 @@ function plot_as_quiver(
     vrs = Float64[]
     vcs = Float64[]
 
-    ϕ = -mesh.topleft.h
+    ϕ = -mesh.corners.ϕ
 
-    vrm = reverser ? mesh.topleft.vr .* scale : -mesh.topleft.vr .* scale
-    vcm = reversec ? -mesh.topleft.vc .* scale : mesh.topleft.vc .* scale
+    vrm = reverser ? mesh.corners.vr .* scale : -mesh.corners.vr .* scale
+    vcm = reversec ? -mesh.corners.vc .* scale : mesh.corners.vc .* scale
 
     vrm = clamp.(vrm, -max_length, max_length)
     vcm = clamp.(vcm, -max_length, max_length)

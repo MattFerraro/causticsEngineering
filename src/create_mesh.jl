@@ -8,20 +8,20 @@ function engineer_caustics(source_image)
     println("Image size: $((height, width))")
 
     # mesh is the same size as the image with an extra row/column to have coordinates to
-    # cover each image pixel with a triangle.
+    # cover each image corner with a triangle.
     mesh = FaceMesh(height, width)
-    println("Mesh creation: ")
-    r_check = 1
-    c_check = 1
-    println(
-        "\tCoordinates: $(mesh.topleft.r[r_check, c_check]) , $(mesh.topleft.c[r_check, c_check]) , $(mesh.topleft.h[r_check, c_check])",
-    )
-    println(
-        "\tVelocities: $(mesh.topleft.vr[r_check, c_check]) , $(mesh.topleft.vc[r_check, c_check])",
-    )
+    # println("Mesh creation: ")
+    # r_check = 1
+    # c_check = 1
+    # println(
+    #     "\tCoordinates: $(mesh.corners.r[r_check, c_check]) , $(mesh.corners.c[r_check, c_check]) , $(mesh.corners.ϕ[r_check, c_check])",
+    # )
+    # println(
+    #     "\tVelocities: $(mesh.corners.vr[r_check, c_check]) , $(mesh.corners.vc[r_check, c_check])",
+    # )
 
     # The energy going through the lens is equal to the amount of energy on the caustics
-    total_energy_lens = height * width
+    total_energy_lens = height * width * 1 # 1 unit of energy per corner
     total_energy_caustics = sum(imageBW)
     correction_ratio = (width * height) / sum(imageBW)
 
@@ -29,30 +29,30 @@ function engineer_caustics(source_image)
     # original image.
     imageBW = imageBW .* correction_ratio
 
-    for i ∈ 1:256
+    for i ∈ 1:5
         println("\nSTARTING VERTICAL ITERATION $(i) ---")
 
-        max_update = move_vertically!(mesh, imageBW, "it$(i)")
+        max_update = solve_velocity_potential!(mesh, imageBW, "it$(i)")
         print("Vertical move max update = $(max_update)")
 
-        println(
-            "\tCoordinates: $(mesh.topleft.r[r_check, c_check]) , $(mesh.topleft.c[r_check, c_check]) , $(mesh.topleft.h[r_check, c_check])",
-        )
-        println(
-            "\tVelocities: $(mesh.topleft.vr[r_check, c_check]) , $(mesh.topleft.vc[r_check, c_check])",
-        )
+        # println(
+        #     "\tCoordinates: $(mesh.corners.r[r_check, c_check]) , $(mesh.corners.c[r_check, c_check]) , $(mesh.corners.ϕ[r_check, c_check])",
+        # )
+        # println(
+        #     "\tVelocities: $(mesh.corners.vr[r_check, c_check]) , $(mesh.corners.vc[r_check, c_check])",
+        # )
 
         println("---------- ITERATION $(i): $(max_update)/n")
     end
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
-    mesh.topleft.h, max_update =
+    mesh.corners.ϕ, max_update =
         move_horizontally(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
     println(" max update = $(max_update)")
 
 
 
-    println("$(mesh.topleft.vr[r_check, c_check]) , $(mesh.topleft.vc[r_check, c_check])")
+    println("$(mesh.corners.vr[r_check, c_check]) , $(mesh.corners.vc[r_check, c_check])")
 
 
     # solidMesh = create_solid(mesh)
@@ -71,55 +71,89 @@ end
 """
 $(SIGNATURES)
 """
-function move_vertically!(mesh, image, suffix)
+function solve_velocity_potential!(mesh, image, suffix)
     # Remember mesh is (will be) `grid_definition x grid_definition` just like the image
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
 
     # The idea is that:
-    # - any pixel on the caustic projection receives light from a given 'rectangle' on the lens.
+    # - any corner on the caustic projection receives light from a given 'rectangle' on the lens.
     # - That rectangle is made of 2 triangles.
-    area_distorted_pixels = get_area_pixels(mesh)
-    @assert max_sum_abs(area_distorted_pixels) "ALERT: vert. Δ area_distorted_pixels is too large - max/min = $(maximum(area_distorted_pixels)) / $(minimum(area_distorted_pixels))"
+    area_distorted_corners = get_area_corners(mesh)
+    @assert average_absolute(area_distorted_corners) """
 
-    intensity_error = Float64.(area_distorted_pixels - image)
-    @assert max_sum_abs(intensity_error) "ALERT: vert. Δ intensity_error is too large - max/min = $(maximum(intensity_error)) / $(minimum(intensity_error))"
+                                                    solve_velocity_potential: area_distorted_corners values seem too large
+                                                    $(maximum(area_distorted_corners)) / $(minimum(area_distorted_corners))
 
-    # The divergence matrix moves all the topleft corners. illumination_error is therefore not large enough.
-    height, width = size(mesh)
-    divergence_intensity = zeros(Float64, height + 1, width + 1)
-    divergence_intensity[1:height, 1:width] .= intensity_error[1:height, 1:width]
-    fill_borders!(divergence_intensity, 0.0)
+                                                        """
 
-    @assert max_sum_abs(divergence_intensity) "ALERT: vert. Δ divergence_intensity is too large - max/min = $(maximum(divergence_intensity)) / $(minimum(divergence_intensity))"
 
+    error_luminosity = Float64.(area_distorted_corners - image)
+    @assert average_absolute(error_luminosity) """
+
+                                                   solve_velocity_potential: error_luminosity values seem too large
+                                                       max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
+                                                       max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
+
+                                                       """
 
     # Save the loss image as a png
-    plot_loss!(divergence_intensity, suffix, image)
+    plot_loss!(error_luminosity, suffix, image)
 
-    # ϕ is the _heightmap_ therefore size of topleft
-    ϕ = mesh.topleft.h
+    # ϕ is the _velocity potential_
+    # ϕ is defined per corner
+    ϕ = zeros(Float64, size(mesh.corners.ϕ))
 
-    max_update = 100.0
-    interaction_count = 0
-    while true
-        interaction_count += 1
-        interaction_count % 500 == 0 && println("Converging for intensity: $(max_update)")
+    # For the purpose of Poisson, we need to divergence to increase towards the inside: negative divergence for high luminosity
+    error_luminosity = -error_luminosity
+
+    max_update = Inf
+    iteration_count = 0
+    for _ ∈ 1:5
+        iteration_count += 1
+        iteration_count % 100 == 0 && println("Converging for intensity: $(max_update)")
 
         old_max_update = max_update
-        ϕ, max_update = relax_vertically(ϕ, divergence_intensity)
+        println(
+            "solve_velocity_potential: iteration count = $(iteration_count) -- ",
+            "max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ)) -- ",
+            "max/min mesh.corners.ϕ = $(maximum(mesh.corners.ϕ)) / $(minimum(mesh.corners.ϕ)) -- ",
+            "max_update = $(max_update)",
+        )
+
+        # Solve the Poisson equation where the divergence of the gradient of ϕ is equal to the luminosity loss.
+        ϕ, max_update = gradient_descent(ϕ, error_luminosity)
+        @assert average_absolute(ϕ) """
+
+                                    solve_velocity_potential: ϕ values seem too large
+                                        iteration count = $(iteration_count)
+                                        max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
+                                        max/min mesh.corners.ϕ = $(maximum(mesh.corners.ϕ)) / $(minimum(mesh.corners.ϕ))
+
+                                        max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
+                                        max_update = $(max_update)
+
+                                        """
+
+
+
         if abs(max_update) < 1e-6 ||
            abs((max_update - old_max_update) / old_max_update) < 0.01
             println(
-                "Convergence stopped at step $(interaction_count) with ",
+                "Convergence stopped at step $(iteraction_count) with ",
                 "max_update = $(max_update) -- ",
-                "max/min area_distorted_pixels = $(maximum(area_distorted_pixels)) / $(minimum(area_distorted_pixels)) -- ",
-                "max divergence = $(maximum(abs.(divergence_intensity)))",
+                "max/min area_distorted_corners = $(maximum(area_distorted_corners)) / $(minimum(area_distorted_corners)) -- ",
+                "max error_luminosity = $(maximum(abs.(error_luminosity)))",
             )
             break
         end
     end
 
-    mesh.topleft.h[1:height+1, 1:width+1] .= ϕ[1:height+1, 1:width+1]
+    mesh.corners.ϕ .= ϕ
+
+    # Now we need to march the x,y locations in our mesh according to this gradient!
+    # Tasks are a control flow feature that allows computations to be suspended and resumed in a flexible manner.
+    # We mention them here only for completeness; for a full discussion see Asynchronous Programming.
+    march_mesh!(mesh)
 
     save_stl!(
         matrix_to_mesh(ϕ * 0.02),
@@ -141,11 +175,6 @@ function move_vertically!(mesh, image, suffix)
 
     # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
-
-    # Now we need to march the x,y locations in our mesh according to this gradient!
-    # Tasks are a control flow feature that allows computations to be suspended and resumed in a flexible manner.
-    # We mention them here only for completeness; for a full discussion see Asynchronous Programming.
-    march_mesh!(mesh, ϕ)
     save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
 
     return max_update
@@ -168,24 +197,24 @@ function move_horizontally(
     height, width = size(mesh)
 
     # Coordinates difference
-    # Coordinates on the caustics = simple rectangular values in pixels.
-    # Coordinates on the lens face comes from topleft field.
-    d_row = mesh.topleft.rows_numbers - mesh.topleft.r
-    d_col = mesh.topleft.cols_numbers - mesh.topleft.c
+    # Coordinates on the caustics = simple rectangular values in corners.
+    # Coordinates on the lens face comes from corner field.
+    d_row = mesh.corners.rows_numbers - mesh.corners.r
+    d_col = mesh.corners.cols_numbers - mesh.corners.c
 
     # true_H is the real distance beteen the surface of the lens and the projection
     # H is the initial distance from the surface of the carved face to the projection screen.
     # H is constant and does not account for the change in heights due to carving.
-    # The focal length is in meters. H is in Pixels.
+    # The focal length is in meters. H is in corners.
     # Note: Higher location means closer to the caustics => negative sign
-    H = f / Meters_Per_Pixel
+    H = f / Meters_Per_corner
 
-    true_H = similar(mesh.topleft.h)
-    @. true_H[:] = -mesh.topleft.h[:] + H
+    true_H = similar(mesh.corners.ϕ)
+    @. true_H[:] = -mesh.corners.ϕ[:] + H
 
     # Normals.
-    N_row = zeros(Float64, height + 1, width + 1)
-    N_col = zeros(Float64, height + 1, width + 1)
+    N_row = zeros(Float64, size(true_H))
+    N_col = zeros(Float64, size(true_H))
     @. N_row[:] = tan(atan(d_row[:] / true_H[:]) / (n₁ - n₂))
     @. N_col[:] = tan(atan(d_col[:] / true_H[:]) / (n₁ - n₂))
 
@@ -195,16 +224,13 @@ function move_horizontally(
     @. div_row[1:end, 1:end] = N_row[2:end, 1:end-1] - N_row[1:end-1, 1:end-1]
     @. div_col[1:end, 1:end] = N_col[1:end-1, 2:end] - N_col[1:end-1, 1:end-1]
 
-    divergence_direction = zeros(Float64, width + 1, height + 1)
+    divergence_direction = zeros(Float64, size(div_row))
     divergence_direction[1:height, 1:width] = div_row + div_col
-    fill_borders!(divergence_direction, 0.0)
-
-    @assert max_sum_abs(divergence_direction) "ALERT: horiz. Δ divergence_direction is too large - max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))"
-
+    @assert average_absolute(divergence_direction) "ALERT: horiz. Δ divergence_direction is too large - max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))"
 
     println("Have all the divergences")
 
-    ϕ = zeros(Float64, height + 1, width + 1)
+    corner_heights = zeros(Float64, size(mesh.corners.ϕ))
     max_update = 1_000.0
     iteration_count = 0
     while true
@@ -212,8 +238,8 @@ function move_horizontally(
         iteration_count % 100 == 0 && println("Converging for divergence: $(max_update)")
 
         old_max_update = max_update
-        ϕ, max_update = relax_vertically(ϕ, -divergence_direction)
-        @assert max_sum_abs(ϕ) "ALERT: horiz. Δ ϕ is too large - max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))"
+        corner_heights, max_update = gradient_descent(corner_heights, -divergence_direction)
+        @assert average_absolute(corner_heights) "ALERT: horiz. Δ corner_heights is too large - max/min corner_heights = $(maximum(corner_heights)) / $(minimum(corner_heights))"
 
 
         if abs(max_update) < 1e-6 ||
@@ -227,7 +253,7 @@ function move_horizontally(
     end
 
     # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
-    return ϕ, max_update
+    return corner_heights, max_update
 end
 
 
@@ -239,69 +265,98 @@ There is a hardcoded assumption of Neumann boundary conditions--that the derivat
 boundary must be zero in all cases. See:
 https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
 
+- ϕ is the potential to solve subject to the Poisson equation and is the same size as the corners (posts)
+- target is ∇²ϕ and is of the size of the pixels (fences)
+
 """
-function relax_vertically(ϕ::Matrix{Float64}, divergence::Matrix{Float64})
+function gradient_descent(ϕ::Matrix{Float64}, ∇ϕ::Matrix{Float64})
 
-    @assert max_sum_abs(ϕ) "ALERT: relaxation ϕ is too large - max/min = $(maximum(ϕ)) / $(minimum(ϕ))"
-    @assert max_sum_abs(divergence) "ALERT: relaxation divergence is too large - max/min = $(maximum(divergence)) / $(minimum(divergence))"
+    # Ensure that border conditions are as they should
+    fill_borders!(∇ϕ, 0.0)
+    fill_borders!(ϕ, 0.0)
 
-    @assert any(isnan.(ϕ)) == false "Calling relaxation with a ϕ that contains NaN!!"
-    @assert any(isnan.(divergence)) == false "Calling relaxation with a divergence that contains NaN!!"
+    @assert average_absolute(ϕ) """
+
+                                Relaxation: ϕ values seem too large
+                                    max/min ∇ϕ = $(maximum(∇ϕ)) / $(minimum(∇ϕ))
+                                    max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
+
+                                    """
+
+    @assert average_absolute(∇ϕ) """
+
+                                         Relaxation: ∇²ϕ values seem too large
+                                             max/min ∇ϕ = $(maximum(∇ϕ)) / $(minimum(∇ϕ))
+                                             max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
+
+                                             """
 
 
-    # ϕ is of the same size of topleft
-    height, width = size(ϕ)
-    n_pixels = height * width
-    height_average = sum(ϕ) / n_pixels
+    @assert any(isnan.(ϕ)) == false "Relaxation: calling  with a ϕ that contains NaN!!"
+    @assert any(isnan.(∇ϕ)) == false "Relaxation: calling with a ∇ϕ that contains NaN!!"
+
+
+    # ϕ is of the same size as corners = number of corners + 1
+    height_corners, width_corners = size(ϕ)
+    height_pixels, width_pixels = size(∇ϕ)
 
     # Laplacian
 
     # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
-    # Size of ϕ/topleft is h+1, w+1. container adds 1 row/col before and 1 row/col after
-    container_height = 1 + height + 1
-    container_width = 1 + width + 1
-    container = zeros(Float64, container_height, container_width)
-    container[2:container_height-1, 2:container_width-1] .= ϕ
-    @assert max_sum_abs(container) "ALERT: relaxation container is too large - max/min = $(maximum(container)) / $(minimum(container))"
+    # Size of ϕ/corner is h, w. Padded matrix adds 1 row/col after
+    # ϕ is inserted in padded matrix within  1:height_corners+1 x 1:width_corners+1.
+    # The rest of the padded matrix (the borders) are set at 0.0.
+    padded_ϕ = zeros(Float64, height_corners + 1, width_corners + 1)
+    padded_ϕ[1:height_corners, 1:width_corners] .= ϕ
 
-    # Those values are all of ϕ's size but shifted in 4 directions
-    height_above = container[2-1:container_height-1-1, 2+0:container_width-1]
-    height_below = container[2+1:container_height-1+1, 2+0:container_width-1]
-    height_left = container[2+0:container_height-1, 2-1:container_width-1-1]
-    height_right = container[2+0:container_height-1, 2+1:container_width-1+1]
+    # Those values are all of ϕ's size and represent the _flow_ in each direction
+    flow_up = zeros(Float64, size(∇ϕ))
+    flow_down = zeros(Float64, size(∇ϕ))
+    flow_left = zeros(Float64, size(∇ϕ))
+    flow_right = zeros(Float64, size(∇ϕ))
+
+    flow_up[1:end, 1:end] .= padded_ϕ[1:end-2, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
+    flow_down[1:end, 1:end] .= padded_ϕ[3:end, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
+    flow_left[1:end, 1:end] .= padded_ϕ[2:end-1, 1:end-2] - padded_ϕ[2:end-1, 2:end-1]
+    flow_right[1:end, 1:end] .= padded_ϕ[2:end-1, 3:end] - padded_ϕ[2:end-1, 2:end-1]
+
+    fill_borders!(flow_up, 0.0)
+    fill_borders!(flow_down, 0.0)
+    fill_borders!(flow_left, 0.0)
+    fill_borders!(flow_right, 0.0)
 
     # Target position. The target is the current height map smoothed by averaging to which the
-    # divergence is added.
-    # δ_map is the same size as divergence.
-    δ_map = zeros(Float64, size(divergence))
+    # flow is added.
+    # This has to converge towards the ∇ϕ. Difference to calculate speed of the descent.
+    δ = (flow_up + flow_down + flow_left + flow_right) + ∇ϕ
 
-    # δ_map is the Laplacian of the height
-    δ_map = (height_above + height_below + height_left + height_right) / 4.0 - ϕ
-    @assert max_sum_abs(δ_map) "ALERT: relaxation δ_map as (average - ϕ) is too large - max/min = $(maximum(δ_map)) / $(minimum(δ_map))"
+    @assert average_absolute(δ) """
 
-    # This has to converge towards the divergence. Difference to calculate speed of the descent.
-    δ_map -= divergence
-    @assert max_sum_abs(δ_map) "ALERT: relaxation δ_map as including divergence is too large - max/min = $(maximum(δ_map)) / $(minimum(δ_map))"
+                                               Relaxation: ∇ϕ_error as (current - target) seem too large
+                                                   max/min target ∇ϕ = $(maximum(∇ϕ)) / $(minimum(∇ϕ))
+                                                   max/min ∇ϕ_error = $(maximum(δ)) / $(minimum(δ))
 
-    # height_div, width_div = size(divergence)
-    # @. target_map[height_div, width_div] += divergence / 4.0
-    fill_borders!(δ_map, 0.0)
+                                                   max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
+                                                   max/min padded_ϕ = $(maximum(padded_ϕ)) / $(minimum(padded_ϕ))
+                                                   max/min flow_up = $(maximum(flow_up)) / $(minimum(flow_up))
+                                                   max/min flow_down = $(maximum(flow_down)) / $(minimum(flow_down))
+                                                   max/min flow_left = $(maximum(flow_left)) / $(minimum(flow_left))
+                                                   max/min flow_right = $(maximum(flow_right)) / $(minimum(flow_right))
 
-    # Let the heightmap converge towards the target at a slow rate.
-    # new_ϕ = ϕ + ω .* δ_map
-    new_ϕ = zeros(Float64, size(divergence))
+                                                   """
 
-    # new_ϕ = ϕ + 1.94 * δ_map
-    new_ϕ = ϕ + 0.2 * δ_map
-    @assert any(isnan.(new_ϕ)) == false "new_ϕ contains NaN!!"
+    # @. target_map[height_div, width_div] += ∇ϕ / 4.0
+    # fill_borders!(∇ϕ_error, 0.0)
 
-    max_update = maximum(abs.(new_ϕ))
-    @assert !isnan(max_update) """ MAX UPDATE IS NOT A NaN!!!
-                                   Max height = $( maximum(ϕ) )  --  Min height = $( minimum(ϕ) )  --  Height average = $(height_average)
-                                   Max divergence = $( maximum(divergence) )  --  Min divergence = $( minimum(divergence) )
-                                   """
+    # Let the heightmap converge towards the target at a slow rate = gradient descent.
+    # @. ϕ += 0.2 * ∇ϕ_error
+    @. ϕ[1:height_pixels, 1:width_pixels] +=
+        1.94 / 40.0 * δ[1:height_pixels, 1:width_pixels]
+    @assert !any(isnan.(ϕ)) "Relaxation: Updated ϕ contains NaN!!"
 
-    return new_ϕ, max_update
+    max_update = maximum(abs.(1.94 / 40.0 * δ))
+
+    return ϕ, max_update
 end
 
 
@@ -311,34 +366,28 @@ $(SIGNATURES)
 A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
 area in the x, y plane. h is ignored.
 
-The function returns a matrix with the quantity of light coming from each 'rectangle'  around a pixel. That 'rectangle'
+The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
 has been shifted and flexed around.
 """
-function get_area_pixels(mesh::FaceMesh)
+function get_area_corners(mesh::FaceMesh)
     height, width = size(mesh)
 
-    pixel_areas = zeros(Float64, size(mesh))
+    top_tri_area =
+        [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
+    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
 
-    for ci ∈ CartesianIndices(pixel_areas)
-        top_tri_area = area(triangle3D(mesh, ci, :top)...)
-        bot_tri_area = area(triangle3D(mesh, ci, :bottom)...)
+    bot_tri_area =
+        [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
+    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
 
-        isnan(top_tri_area) &&
-            println("NaN area at $(ci) for top triangle $(top_triangle3D(mesh, ci)).")
-        isnan(bot_tri_area) &&
-            println("NaN area at $(ci) for bottom triangle $(bot_triangle3D(mesh, ci)).")
-
-        pixel_areas[ci] = top_tri_area + bot_tri_area
-    end
-
-    return pixel_areas
+    return top_tri_area + bot_tri_area
 end
 
 
 """
 $(SIGNATURES)
 """
-function quantifyLoss!(D, suffix, img)
+function quantify_loss(D, suffix, img)
     println("Loss:")
     println("\tMinimum loss: $(minimum(D))")
     println("\tMaximum loss: $(maximum(D))")
@@ -352,19 +401,15 @@ function quantifyLoss!(D, suffix, img)
     red[D.<0] = -normalised_D_min[D.<0]
     green = zeros(size(D))
 
-    # println(size(blue))
-    # println(size(red))
-    # println(size(green))
-
     rgbImg = RGB.(red, green, blue)'
     save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
 
-    # println("Saving output image:")
-    # println(typeof(img))
-    # E = Gray.(D)
-    # println(typeof(E))
-    # outputImg = img - E
-    # save("./examples/actual_$(suffix).png", outputImg)
+    println("Saving output image:")
+    println(typeof(img))
+    E = Gray.(D)
+    println(typeof(E))
+    outputImg = img - E
+    save("./examples/actual_$(suffix).png", outputImg)
 end
 
 
@@ -403,27 +448,24 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
     c = Br * Cc - Cr * Bc
 
     # if a = 0, this is just a linear equation.
-    if a == 0
-        # Fingers crossed that b != 0 but extremely unlikely since B is a Float64.
-        return -c / b, -c / b
+    if a == 0 && b != 0
+        return smallest_positive(-c / b, c / b)
     else
-
         discriminant = b^2 - 4a * c
 
         # If there is a solution
         if discriminant >= 0
             d = sqrt(discriminant)
-            return (-b - d) / 2a, (-b + d) / 2a
-        else
-
-            # There can be no solution if, after translation, B abd C move in parallel direction.
-            # C will never end up on the line AB.
-            # Very unlikely with Float64.
-            # Negative numbers are filtered out when calculating the minimum jiggle ratio
-            return -1.0, -1.0
+            return smallest_positive((-b - d) / 2a, (-b + d) / 2a)
         end
     end
+    # There can be no solution if, after translation, B abd C move in parallel direction.
+    # C will never end up on the line AB.
+    # Very unlikely with Float64.
+    # Negative numbers are filtered out when calculating the minimum jiggle ratio
+    return 1e-10
 end
+
 
 find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])
 
@@ -435,77 +477,73 @@ $(SIGNATURES)
 
 `march_mesh!` flexes the mesh
 """
-function march_mesh!(mesh::FaceMesh, ϕ::Matrix{Float64})
+function march_mesh!(mesh::FaceMesh)
+
+    ϕ = mesh.corners.ϕ
+    height, width = size(ϕ)
 
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
     # println("Min/Max of values of ϕ: $(minimum(ϕ)) / $(maximum(ϕ))")
     # println("Sum of values of ∇ϕᵤ:   $( sum(∇ϕᵤ) )")
     # println("Sum of values of ∇ϕᵥ:   $( sum(∇ϕᵥ) )")
 
-    height, width = size(ϕ)
 
     # For each point in the mesh we need to figure out its velocity
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
-    # Warning: The indices are necessary because topleft and ∇ϕ are of different sizes
+    # Warning: The indices are necessary because corner and ∇ϕ are of different sizes
     # CHECK SIGNS!
-    mesh.topleft.vr[1:height, 1:width] .= -∇ϕᵤ[1:height, 1:width]
-    mesh.topleft.vc[1:height, 1:width] .= -∇ϕᵥ[1:height, 1:width]
+    mesh.corners.vr .= -∇ϕᵤ
+    mesh.corners.vc .= -∇ϕᵥ
 
     # Just in case...
-    reset_border_values!(mesh.topleft)
+    reset_border_values!(mesh.corners)
+    reset_border_values!(mesh.corners)
 
     # Basically infinity time to shrink a triangle to nothing.
     min_positive_t = Inf
     list_min_pos_t = zeros(Float64, (height - 2) * (width - 2))
 
-    t1 = zeros(Float64, height, width)
-    t2 = zeros(Float64, height, width)
+    t1 = zeros(Float64, size(mesh))
+    t2 = zeros(Float64, size(mesh))
 
-    mesh_r = copy(mesh.topleft.r)
-    mesh_c = copy(mesh.topleft.c)
-    mesh_h = copy(mesh.topleft.h)
-    for row ∈ 1:height-1, col ∈ 1:width-1
-        # # Jiggle each point in a random order.
-        # for (row, col) ∈ shuffle([(r, c) for r ∈ 2:height-1, c ∈ 2:width-1])
+    mesh_r = copy(mesh.corners.r)
+    mesh_c = copy(mesh.corners.c)
+    mesh_h = copy(mesh.corners.ϕ)
 
-        # Get the time, at that velocity, for the area of the triangle to be nil.
-        # We are only interested by positive values to only move in the direction of the gradient
-        for triangle ∈
-            [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom)]
-            t1, t2 = find_maximum_t(triangle)
-            @assert typeof(t1) == Float64 && typeof(t2) == Float64 "Maximum times are not numerical at $(row), $(col)"
-        end
+    # Get the time, at that velocity, for the area of the triangle to be nil.
+    # We are only interested by positive values to only move in the direction of the gradient
 
-        # list_min_pos_t[(row-1)+(col-2)*(width-2)]
-        # println("March mesh δ: $(δ)")
-    end
+    list_triangles = vcat(
+        [triangle3D(mesh, row, col, :top) for row ∈ 1:height-1, col ∈ 1:width-1],
+        [triangle3D(mesh, row, col, :bottom) for row ∈ 1:height-1, col ∈ 1:width-1],
+    )
+    list_maximum_t = find_maximum_t.(list_triangles)
+    min_positive_t = minimum(list_maximum_t)
 
-    t1 = max.(t1, 0.0)
-    t2 = max.(t2, 0.0)
-
-    min_positive_t = min(minimum(t1), minimum(t2))
+    # @assert all(typeof.(t1) .== Float64) && all(typeof.(t2) .== Float64) "March mesh: Maximum times are not numerical at $(row), $(col)"
 
     δ = min_positive_t / 2.0
-    mesh.topleft.r -= δ .* ∇ϕᵤ
-    mesh.topleft.c -= δ .* ∇ϕᵥ
+    mesh.corners.r -= δ .* ∇ϕᵤ
+    mesh.corners.c -= δ .* ∇ϕᵥ
 
-    # reset_border_values!(mesh.topleft)
+    # reset_border_values!(mesh.corner)
 
     # Reset the border at the fixed values fixed coordinates.
-    reset_border_values!(mesh.topleft)
+    reset_border_values!(mesh.corners)
 
     println(
-        "Average mesh changes on row = $(sum(abs.(mesh.topleft.r - mesh_r)) / (height * width))",
-    )
+        """
 
-    println(
-        "Average mesh changes on col = $(sum(abs.(mesh.topleft.c - mesh_c)) / (height * width))",
-    )
+        March mash:
+            δ = $(δ)
+            first minimum ts: $(list_maximum_t[1:5])
+            Average mesh changes on row = $(sum(abs.(mesh.corners.r - mesh_r)) / (height * width))
+            Average mesh changes on col = $(sum(abs.(mesh.corners.c - mesh_c)) / (height * width))
+            Average mesh changes on height = $(sum(abs.(mesh.corners.ϕ - mesh_h)) / (height * width))
 
-    println(
-        "Average mesh changes on height = $(sum(abs.(mesh.topleft.h - mesh_h)) / (height * width))",
+        """,
     )
 
     # Modify the mesh triangles but ensuring that we are far from destroying any of them with a nil area.
@@ -528,21 +566,14 @@ end
 $(SIGNATURES)
 """
 function ∇(ϕ::Matrix{Float64})
-    height, width = size(ϕ)
+    ∇ϕᵤ = zeros(Float64, size(ϕ))   # divergence on the right edge will be filled with zeros
+    ∇ϕᵥ = zeros(Float64, size(ϕ))   # divergence on bottom edge will be filled with zeros
 
-    ∇ϕᵤ = zeros(Float64, height, width)   # the right edge will be filled with zeros
-    ∇ϕᵥ = zeros(Float64, height, width)   # the bottom edge will be filled with zeros
+    @. ∇ϕᵤ[begin:end-1, :] = ϕ[begin+1:end, :] - ϕ[begin:end-1, :]
+    @. ∇ϕᵥ[:, begin:end-1] = ϕ[:, begin+1:end] - ϕ[:, begin:end-1]
 
-    for row ∈ 1:height-1, col ∈ 1:width-1
-        ∇ϕᵤ[row, col] = ϕ[row+1, col] - ϕ[row, col]
-        ∇ϕᵥ[row, col] = ϕ[row, col+1] - ϕ[row, col]
-    end
-
-    ∇ϕᵤ[1:end, end] .= 0.0
-    ∇ϕᵤ[end, 1:end] .= 0.0
-
-    ∇ϕᵥ[1:end, end] .= 0.0
-    ∇ϕᵥ[end, 1:end] .= 0.0
+    fill_borders!(∇ϕᵤ, 0.0)
+    fill_borders!(∇ϕᵥ, 0.0)
 
     return ∇ϕᵤ, ∇ϕᵥ
 end
@@ -560,11 +591,11 @@ function matrix_to_mesh(ϕ::Matrix{Float64})
 
     mesh = FaceMesh(height, width)
 
-    # 1 more topleft than pixels! Therefore compiler needs to specify exact indices.
-    mesh.topleft.h[1:height, 1:width] .= ϕ[1:height, 1:width]
+    # 1 more corner than corners! Therefore compiler needs to specify exact indices.
+    mesh.corners.ϕ[1:height, 1:width] .= ϕ[1:height, 1:width]
 
     # The borders' height is forced at 0.
-    reset_border_values!(mesh.topleft)
+    reset_border_values!(mesh.corners)
 
     return mesh
 end
@@ -577,8 +608,8 @@ TO REFACTOR.
 """
 function create_solid(
     mesh::FaceMesh;
-    bottom_offset = Bottom_Offset / Meters_Per_Pixel,
-    top_offset = Top_Offset / Meters_Per_Pixel,
+    bottom_offset = Bottom_Offset / Meters_Per_corner,
+    top_offset = Top_Offset / Meters_Per_corner,
 )
     height, width = size(mesh)
 
@@ -603,11 +634,11 @@ function create_solid(
     cols = repeat(Float64.(1:width)', height, 1)
 
     bottom_mesh = FaceMesh(height, width)
-    bottom_mesh.topleft.r[:] .= rows[:]
-    bottom_mesh.topleft.c[:] .= cols[:]
-    bottom_mesh.topleft.h[:] .= -Bottom_Offset
-    bottom_mesh.topleft.vr[:] .= 0.0
-    bottom_mesh.topleft.vr[:] .= 0.0
+    bottom_mesh.corner.r[:] .= rows[:]
+    bottom_mesh.corner.c[:] .= cols[:]
+    bottom_mesh.corner.ϕ[:] .= -Bottom_Offset
+    bottom_mesh.corner.vr[:] .= 0.0
+    bottom_mesh.corner.vr[:] .= 0.0
 
 
     ###

@@ -6,20 +6,21 @@ image = Images.load("./examples/cat_posing.jpg"); # Check current working direct
 using CausticsEngineering
 mesh, imageBW = engineer_caustics(image);
 
+
 Gray.(imageBW)
 
-mesh.topleft.r[1:10, 1:10]
-mesh.topleft.c[1:10, 1:10]
-mesh.topleft.h[1:10, 1:10]
-mesh.topleft.vr[1:10, 1:10]
-mesh.topleft.vc[1:10, 1:10]
+mesh.pixel.r[1:10, 1:10]
+mesh.pixel.c[1:10, 1:10]
+mesh.pixel.ϕ[1:10, 1:10]
+mesh.pixel.vr[1:10, 1:10]
+mesh.pixel.vc[1:10, 1:10]
 
 mesh.toptriangles[1:10]
 mesh.bottriangles[1:10]
 
-mesh.topleft.r[250:260, 250:260]
-mesh.topleft.c[250:260, 250:260]
-mesh.topleft.h[250:260, 250:260]
+mesh.pixel.r[250:260, 250:260]
+mesh.pixel.c[250:260, 250:260]
+mesh.pixel.ϕ[250:260, 250:260]
 
 
 using Test
@@ -63,7 +64,7 @@ end
 
 c = t[1]
 
-f.topleft(c)
+f.pixel(c)
 
 t = CausticsEngineering.top_triangle3D(f, CartesianIndex(1, 1))
 

@@ -8,12 +8,12 @@ $(SIGNATURES)
 function convert(::Meshes.SimpleMesh, mesh::FaceMesh)
     height, width = size(mesh)
 
-    points = Meshes.Point3.([mesh.topleft[ci] for ci ∈ CartesianIndices(mesh.topleft)])
+    points = Meshes.Point3.([mesh.corners[ci] for ci ∈ CartesianIndices(mesh.corners)])
 
     top_connections =
-        [connect(mesh.toptriangles[ci]) for ci ∈ CartesianIndices(mesh.topleft)]
+        [connect(mesh.toptriangles[ci]) for ci ∈ CartesianIndices(mesh.corners)]
     bot_connections =
-        [connect(mesh.bottriangles[ci]) for ci ∈ CartesianIndices(mesh.topleft)]
+        [connect(mesh.bottriangles[ci]) for ci ∈ CartesianIndices(mesh.corners)]
 
     return SimpleMesh(points, vcat(top_connections, bot_connections))
 end

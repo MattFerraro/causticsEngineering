@@ -1,18 +1,19 @@
 """
 $(TYPEDEF)
 
-## Coordinates
+## Coordinates. Represent the data of each topleft corner of a pixel.
+## posts/fences: One more corner than number of pixels.
 
 """
 struct Vertex3D
     r::Float64
     c::Float64
-    h::Float64
+    ϕ::Float64
 
     vr::Float64
     vc::Float64
 
-    Vertex3D(r, c, h, vr, vc) = new(r, c, h, vr, vc)
+    Vertex3D(r, c, ϕ, vr, vc) = new(r, c, ϕ, vr, vc)
     Vertex3D() = new(0.0, 0.0, 0.0, 0.0, 0.0)
 end
 
@@ -22,8 +23,7 @@ $(SIGNATURES)
 function dist(p1::Tuple{Float64,Float64,Float64}, p2::Tuple{Float64,Float64,Float64})
     dr = p2[1] - p1[1]
     dc = p2[2] - p1[2]
-    dh = p2[3] - p1[3]
-    return sqrt(dr^2 + dc^2 + dh^2)
+    return sqrt(dr^2 + dc^2)
 end
 
 """
@@ -31,33 +31,10 @@ $(SIGNATURES)
 """
 function dist(p1::Vertex3D, p2::Vertex3D)
     dr = p2.r - p1.r
-    @assert 0.0 <= abs(dr) <= 1e6 "Distance (row coordinate = $(dr)) between $(p1) and $(p2) makes no sense "
-
     dc = p2.c - p1.c
-    @assert 0.0 <= abs(dc) <= 1e6 "Distance (col coordinate = $(dc)) between $(p1) and $(p2) makes no sense "
-
-    dh = p2.h - p1.h
-    @assert 0.0 <= abs(dh) <= 1e6 "Distance (height coordinate = $(dh)) between $(p1) and $(p2) makes no sense "
-
-    return sqrt(dr^2 + dc^2 + dh^2)
+    return sqrt(dr^2 + dc^2)
 end
 
-
-# """
-# $(SIGNATURES)
-# """
-# function area(
-#     p1::Tuple{Float64,Float64,Float64},
-#     p2::Tuple{Float64,Float64,Float64},
-#     p3::Tuple{Float64,Float64,Float64},
-# )
-#     a = dist(p1, p2)
-#     b = dist(p2, p3)
-#     c = dist(p3, p1)
-#     s = (a + b + c) / 2.0
-
-#     return sqrt(s * (s - a) * (s - b) * (s - c))
-# end
 
 """
 $(SIGNATURES)
@@ -78,24 +55,10 @@ end
 """
 $(SIGNATURES)
 
-A midpoint is the average between two points
-"""
-midpoint(p1::Vertex3D, p2::Vertex3D) =
-    Vertex3D((p1.r + p2.r) / 2.0, (p1.c + p2.c) / 2.0, (p1.h + p2.h) / 2.0, 0.0, 0.0)
-
-
-"""
-$(SIGNATURES)
-
 Centroid of three points.
 """
-centroid(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D) = Vertex3D(
-    (p1.r + p2.r + p3.r) / 3.0,
-    (p1.c + p2.c + p3.c) / 3.0,
-    (p1.h + p2.h + p3.h) / 3.0,
-    0,
-    0,
-)
+centroid(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D) =
+    Vertex3D((p1.r + p2.r + p3.r) / 3.0, (p1.c + p2.c + p3.c) / 3.0, 0.0, 0.0, 0.0)
 
 
 """
@@ -129,7 +92,9 @@ mutable struct FieldVertex3D
 
     r::AbstractMatrix{Float64}
     c::AbstractMatrix{Float64}
-    h::AbstractMatrix{Float64}
+
+    # Velocity potential at each corner
+    ϕ::AbstractMatrix{Float64}
 
     vr::AbstractMatrix{Float64}
     vc::AbstractMatrix{Float64}
@@ -137,29 +102,29 @@ mutable struct FieldVertex3D
     rows_numbers::AbstractMatrix{Float64}
     cols_numbers::AbstractMatrix{Float64}
 
-    # FieldVertex3D(size, mr, mc, mh, mvr, mvc, rows_numbers, cols_numbers) = new(size, mr, mc, mh, mvr, mvc, rows_numbers, cols_numbers)
+    # FieldVertex3D(size, mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers) = new(size, mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
 
 end
 
-
+# Information about each corner surrounding a pixel. Posts&fences warning!!!
 function FieldVertex3D(height, width)
-    # mr = zeros(Float64, height + 1, width + 1)
-    # my = zeros(Float64, height + 1, width + 1)
-    # mh = zeros(Float64, height + 1, width + 1)
-
-    # mvr = zeros(Float64, height + 1, width + 1)
-    # mvc = zeros(Float64, height + 1, width + 1)
-
     rows_numbers = repeat(Float64.(1:height+1), 1, width + 1)
     cols_numbers = repeat(Float64.(1:width+1)', height + 1, 1)
 
-    mr = rows_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    mc = cols_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    mh = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    mr = rows_numbers
+    mc = cols_numbers
+    mϕ = zeros(Float64, height + 1, width + 1)
 
-    fv = FieldVertex3D((height, width), mr, mc, mh, mvr, mvc, rows_numbers, cols_numbers)
+    mvr = zeros(Float64, height + 1, width + 1)
+    mvc = zeros(Float64, height + 1, width + 1)
+
+    # mr = rows_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    # mc = cols_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    # mϕ = rand(Float64, height, width) ./ 1_000 .- 0.5 / 1_000
+    # mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+    # mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
+
+    fv = FieldVertex3D((height, width), mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
     reset_border_values!(fv)
     return fv
 end
@@ -170,21 +135,20 @@ $(SIGNATURES)
 
 Return the dimension of the mesh as the number of rectangles. It does not return the number of corner points.
 """
-function reset_border_values!(topleft::FieldVertex3D)
+function reset_border_values!(corners::FieldVertex3D)
     # Reset the border at the fixed values fixed coordinates.
-    topleft.r[1, :] .= topleft.rows_numbers[1, :]
-    topleft.r[end, :] .= topleft.rows_numbers[end, :]
-    topleft.r[:, 1] .= topleft.rows_numbers[:, 1]
-    topleft.r[:, end] .= topleft.rows_numbers[:, end]
+    corners.r[1, :] .= corners.rows_numbers[1, :]
+    corners.r[end, :] .= corners.rows_numbers[end, :]
+    corners.r[:, 1] .= corners.rows_numbers[:, 1]
+    corners.r[:, end] .= corners.rows_numbers[:, end]
 
-    topleft.c[1, :] .= topleft.cols_numbers[1, :]
-    topleft.c[end, :] .= topleft.cols_numbers[end, :]
-    topleft.c[:, 1] .= topleft.cols_numbers[:, 1]
-    topleft.c[:, end] .= topleft.cols_numbers[:, end]
+    corners.c[1, :] .= corners.cols_numbers[1, :]
+    corners.c[end, :] .= corners.cols_numbers[end, :]
+    corners.c[:, 1] .= corners.cols_numbers[:, 1]
+    corners.c[:, end] .= corners.cols_numbers[:, end]
 
-    fill_borders!(topleft.h, 0.0)
-    fill_borders!(topleft.vr, 0.0)
-    fill_borders!(topleft.vc, 0.0)
+    fill_borders!(corners.vr, 0.0)
+    fill_borders!(corners.vc, 0.0)
 end
 
 
@@ -201,7 +165,7 @@ function Vertex3D(fv::FieldVertex3D, row, col)
         Vertex3D(
             fv.r[row, col],
             fv.y[row, col],
-            fv.h[row, col],
+            fv.ϕ[row, col],
             fv.vr[row, col],
             fv.vc[row, col],
         )
@@ -233,7 +197,7 @@ of triangles rather than corners coming from different rectangles.
 """
 struct FaceMesh
     size::Tuple{Int,Int}
-    topleft::FieldVertex3D
+    corners::FieldVertex3D
 
     toptriangles::AbstractMatrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}
     bottriangles::AbstractMatrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}
@@ -241,7 +205,7 @@ struct FaceMesh
     FaceMesh(s, tl, tt, bt) = new(s, tl, tt, bt)
 
     function FaceMesh(height::Int, width::Int)
-        m_topleft = FieldVertex3D(height, width)
+        m_corner = FieldVertex3D(height, width)
         t_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
             undef,
             height,
@@ -258,7 +222,7 @@ struct FaceMesh
             b_triangles[row, col] = ((row, col + 1), (row + 1, col), (row + 1, col + 1))
         end
 
-        return FaceMesh((height, width), m_topleft, t_triangles, b_triangles)
+        return FaceMesh((height, width), m_corner, t_triangles, b_triangles)
     end
 end
 
@@ -309,30 +273,30 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
         t2_row, t2_col = t[2]
         t3_row, t3_col = t[3]
 
-        r1 = mesh.topleft.r[t1_row, t1_col]
-        c1 = mesh.topleft.c[t1_row, t1_col]
-        h1 = mesh.topleft.h[t1_row, t1_col]
-        vr1 = mesh.topleft.vr[t1_row, t1_col]
-        vc1 = mesh.topleft.vc[t1_row, t1_col]
-        @assert r1^2 + c1^2 + h1^2 <= 1e12 "Coordinate $(r1), $(c1), $(h1) of point #1 at $(row), $(col) side = $(side) makes no sense "
+        r1 = mesh.corners.r[t1_row, t1_col]
+        c1 = mesh.corners.c[t1_row, t1_col]
+        ϕ1 = mesh.corners.ϕ[t1_row, t1_col]
+        vr1 = mesh.corners.vr[t1_row, t1_col]
+        vc1 = mesh.corners.vc[t1_row, t1_col]
+        @assert r1^2 + c1^2 + ϕ1^2 <= 1e12 "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
 
-        r2 = mesh.topleft.r[t2_row, t2_col]
-        c2 = mesh.topleft.c[t2_row, t2_col]
-        h2 = mesh.topleft.h[t2_row, t2_col]
-        vr2 = mesh.topleft.vr[t2_row, t2_col]
-        vc2 = mesh.topleft.vc[t2_row, t2_col]
-        @assert r2^2 + c2^2 + h2^2 <= 1e12 "Coordinate $(r2), $(c2), $(h2) of point #2 at $(row), $(col) side = $(side) makes no sense "
+        r2 = mesh.corners.r[t2_row, t2_col]
+        c2 = mesh.corners.c[t2_row, t2_col]
+        ϕ2 = mesh.corners.ϕ[t2_row, t2_col]
+        vr2 = mesh.corners.vr[t2_row, t2_col]
+        vc2 = mesh.corners.vc[t2_row, t2_col]
+        @assert r2^2 + c2^2 + ϕ2^2 <= 1e12 "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
 
-        r3 = mesh.topleft.r[t3_row, t3_col]
-        c3 = mesh.topleft.c[t3_row, t3_col]
-        h3 = mesh.topleft.h[t3_row, t3_col]
-        vr3 = mesh.topleft.vr[t3_row, t3_col]
-        vc3 = mesh.topleft.vc[t3_row, t3_col]
-        @assert r3^2 + c3^2 + h3^2 <= 1e12 "Coordinate $(r3), $(c3), $(h3) of point #3 at $(row), $(col) side = $(side) makes no sense "
+        r3 = mesh.corners.r[t3_row, t3_col]
+        c3 = mesh.corners.c[t3_row, t3_col]
+        ϕ3 = mesh.corners.ϕ[t3_row, t3_col]
+        vr3 = mesh.corners.vr[t3_row, t3_col]
+        vc3 = mesh.corners.vc[t3_row, t3_col]
+        @assert r3^2 + c3^2 + ϕ3^2 <= 1e12 "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
 
-        p1 = Vertex3D(r1, c1, h1, vr1, vc1)
-        p2 = Vertex3D(r2, c2, h2, vr2, vc2)
-        p3 = Vertex3D(r3, c3, h3, vr3, vc3)
+        p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
+        p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
+        p3 = Vertex3D(r3, c3, ϕ3, vr3, vc3)
         return (p1, p2, p3)
     else
         # return (missing, missing, missing)
@@ -402,4 +366,6 @@ function area(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom})
 end
 
 
-max_sum_abs(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1_024
+average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1e10
+
+smallest_positive(x1::Float64, x2::Float64) = min(max(x1, 0, 0), max(x2, 0.0))
