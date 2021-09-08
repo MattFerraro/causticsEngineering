@@ -1,5 +1,5 @@
 # Currently unused.
-const grid_definition = 64
+const grid_definition = 512
 
 
 """
@@ -234,97 +234,131 @@ end
 $(SIGNATURES)
 """
 function relax!(matrix::Matrix{Float64}, D::Matrix{Float64})
-
-    ω = 1.99    # ω = 2 / (1 + π / width)
-
     # This function implements successive over relaxation for a matrix and its associated error matrix
     # There is a hardcoded assumption of Neumann boundary conditions--that the derivative across the
     # boundary must be zero in all cases. See:
     # https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
-
+    # sz = size(matrix)
+    # width = sz[1]
+    # height = sz[2]
     width, height = size(matrix)
+    # ω = 2 / (1 + π / width)
+    ω = 1.99
+    # println("OMEGA $(ω)")
+    max_update = 0
+    for y = 1:height
+        for x = 1:width
+            val = matrix[x, y]
 
-    max_update = 0.0
-    for x = 1:width, y = 1:height
-        val = matrix[x, y]
+            if x == 1 && y == 1
+                # Top left corner
+                val_down = matrix[x, y + 1]
+                val_right = matrix[x + 1, y]
+                delta = ω / 2 * (val_down + val_right - 2 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            elseif x == 1 && y == height
+                # Bottom left corner
+                val_up = matrix[x, y - 1]
+                val_right = matrix[x + 1, y]
+                delta = ω / 2 * (val_up + val_right - 2 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            elseif x == width && y == 1
+                # Top right corner
+                val_down = matrix[x, y + 1]
+                val_left = matrix[x - 1, y]
+                delta = ω / 2 * (val_down + val_left - 2 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            elseif x == width && y == height
+                # Bottom right corner
+                val_up = matrix[x, y - 1]
+                val_left = matrix[x - 1, y]
+                delta = ω / 2 * (val_up + val_left - 2 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
 
-        if x == 1 && y == 1
-            # Top left corner
-            val_down = matrix[x, y+1]
-            val_right = matrix[x+1, y]
-            delta = 1 / 2 * (val_down + val_right - D[x, y])
-            continue # To skip the matrix[x, y] increment
+            elseif x == 1
+                # Along the left edge, but not the top or buttom corner
+                val_up = matrix[x, y - 1]
+                val_down = matrix[x, y + 1]
+                val_right = matrix[x + 1, y]
+                delta = ω / 3 * (val_up + val_down + val_right - 3 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            elseif x == width
+                # Along the right edge, but not the top or buttom corner
+                val_up = matrix[x, y - 1]
+                val_down = matrix[x, y + 1]
+                val_left = matrix[x - 1, y]
+                delta = ω / 3 * (val_up + val_down + val_left - 3 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            elseif y == 1
+                # Along the top edge, but not the left or right corner
+                val_down = matrix[x, y + 1]
+                val_left = matrix[x - 1, y]
+                val_right = matrix[x + 1, y]
+                delta = ω / 3 * (val_down + val_left + val_right - 3 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            elseif y == height
+                # Along the bottom edge, but not the left or right corner
+                val_up = matrix[x, y - 1]
+                val_left = matrix[x - 1, y]
+                val_right = matrix[x + 1, y]
+                delta = ω / 3 * (val_up + val_left + val_right - 3 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            else
+                # The normal case, in the middle of the mesh!
+                val_up = matrix[x, y - 1]
+                val_down = matrix[x, y + 1]
+                val_left = matrix[x - 1, y]
+                val_right = matrix[x + 1, y]
 
-        elseif x == 1 && y == height
-            # Bottom left corner
-            val_up = matrix[x, y-1]
-            val_right = matrix[x+1, y]
-            delta = 1 / 2 * (val_up + val_right - D[x, y])
+                # The new way
+                # ∇x₁ =
 
-        elseif x == width && y == 1
-            # Top right corner
-            val_down = matrix[x, y+1]
-            val_left = matrix[x-1, y]
-            delta = 1 / 2 * (val_down + val_left - D[x, y])
 
-        elseif x == width && y == height
-            # Bottom right corner
-            val_up = matrix[x, y-1]
-            val_left = matrix[x-1, y]
-            delta = 1 / 2 * (val_up + val_left - D[x, y])
+                # The old way
+                delta = ω / 4 * (val_up + val_down + val_left + val_right - 4 * val - D[x, y])
+                if abs(delta) > max_update
+                    max_update = abs(delta)
+                end
+                matrix[x, y] += delta
+            end
+            # node.z = .25 * (node_up.z + node_down.z + node_left.z + node_right.z) # simple averaging
+            # node.z += ω/4 * (node_up.z + node_down.z + node_left.z + node_right.z - 4 * node.z)
 
-        elseif x == 1
-            # Along the left edge, but not the top or buttom corner
-            val_up = matrix[x, y-1]
-            val_down = matrix[x, y+1]
-            val_right = matrix[x+1, y]
-            delta = 1 / 3 * (val_up + val_down + val_right - D[x, y])
-
-        elseif x == width
-            # Along the right edge, but not the top or buttom corner
-            val_up = matrix[x, y-1]
-            val_down = matrix[x, y+1]
-            val_left = matrix[x-1, y]
-            delta = 1 / 3 * (val_up + val_down + val_left - D[x, y])
-
-        elseif y == 1
-            # Along the top edge, but not the left or right corner
-            val_down = matrix[x, y+1]
-            val_left = matrix[x-1, y]
-            val_right = matrix[x+1, y]
-            delta = 1 / 3 * (val_down + val_left + val_right - D[x, y])
-
-        elseif y == height
-            # Along the bottom edge, but not the left or right corner
-            val_up = matrix[x, y-1]
-            val_left = matrix[x-1, y]
-            val_right = matrix[x+1, y]
-            delta = 1 / 3 * (val_up + val_left + val_right - D[x, y])
-
-        else
-            # The new way
-            # ∇x₁ = [TODO]
-
-            # The old way
-            val_up = matrix[x, y-1]
-            val_down = matrix[x, y+1]
-            val_left = matrix[x-1, y]
-            val_right = matrix[x+1, y]
-            delta = 1 / 4 * (val_up + val_down + val_left + val_right - D[x, y])
+            # matrix[x, y] += ω/4 * (val_up + val_down + val_left + val_right - 4 * val - D[x, y])
         end
-
-        delta = ω * (delta - val)
-        matrix[x, y] += delta
-
-        max_update = max(max_update, abs(delta))
-
-        # node.z = .25 * (node_up.z + node_down.z + node_left.z + node_right.z) # simple averaging
-        # node.z += ω/4 * (node_up.z + node_down.z + node_left.z + node_right.z - 4 * node.z)
-
-        # matrix[x, y] += ω/4 * (val_up + val_down + val_left + val_right - 4 * val - D[x, y])
     end
 
-    return max_update
+    max_update
+
+    # for y = 1:height
+    #     for x = 1:width
+    #         val = matrix[x, y]
+    #     end
+    # end
 end
 
 
@@ -421,6 +455,7 @@ function quantifyLoss!(D, suffix, img)
     println("Loss:")
     println("Minimum: $(minimum(D))")
     println("Maximum: $(maximum(D))")
+    println("SUM: $(sum(D))")
 
     blue = zeros(size(D))
     blue[D.>0] = D[D.>0]
@@ -434,13 +469,6 @@ function quantifyLoss!(D, suffix, img)
 
     rgbImg = RGB.(red, green, blue)'
     save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
-
-    # println("Saving output image:")
-    # println(typeof(img))
-    # E = Gray.(D)
-    # println(typeof(E))
-    # outputImg = img - E
-    # save("./examples/actual_$(suffix).png", outputImg)
 end
 
 
@@ -452,31 +480,42 @@ function oneIteration(meshy, img, suffix)
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
     LJ = getPixelArea(meshy)
     D = Float64.(LJ - img)
+    # Shift D to ensure its sum is zero
+    D .-= sum(D) / (512 * 512)
 
     # Save the loss image as a png
     println(minimum(D))
     println(maximum(D))
     quantifyLoss!(D, suffix, img)
 
+    # These lines are just for plotting the quiver of L, which I needed for the blog post
     # ∇Lᵤ, ∇Lᵥ = ∇(D)
     # plotVAsQuiver(∇Lᵤ, ∇Lᵥ, stride=10, scale=10, max_length=200)
     # println("okay")
     # return
 
-    # save("./examples/loss_$(suffix).png", colorview(Gray, D))
-    # return
     width, height = size(img)
 
-    ϕ = Matrix{Float64}(undef, width, height)
+    # ϕ = Matrix{Float64}(undef, width, height)
+    ϕ = zeros(width, height)
 
+    println("Building Phi")
     for i = 1:10240/2
         max_update = relax!(ϕ, D)
+        
+        if isnan(max_update)
+            println("MAX UPDATE WAS NaN. CANNOT BUILD PHI")
+            return
+        end
+        
+        if i % 500 == 0
+            println(max_update)
+        end
 
-        i % 500 == 0 && println(max_update)
-
-        max_update < 0.00001 &&
+        if max_update < 0.00001
             println("Convergence reached at step $(i) with max_update of $(max_update)")
-        break
+            break
+        end
     end
 
     saveObj!(
