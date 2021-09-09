@@ -45,10 +45,10 @@ function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
     c = dist(v3, v1)
     s = (a + b + c) / 2.0
 
-    surface = s * (s - a) * (s - b) * (s - c)
+    surface = max(s * (s - a) * (s - b) * (s - c), 1 / 100.0)
     @assert surface >= 0.0 "Negative surface for $(v1),  $(v2),  $(v3)"
 
-    return sqrt(s * (s - a) * (s - b) * (s - c))
+    return sqrt(surface)
 end
 
 
@@ -262,6 +262,8 @@ Converts a triangle as a triplet of references to mesh vertices to a triplet of 
 """
 function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:bottom})
     height, width = size(mesh)
+    max_distance_sq = ((height + 1) * (width + 1))^2
+
     if 1 <= row <= height && 1 <= col <= width
         if side == :top
             t = mesh.toptriangles[row, col]
@@ -278,21 +280,21 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
         ϕ1 = mesh.corners.ϕ[t1_row, t1_col]
         vr1 = mesh.corners.vr[t1_row, t1_col]
         vc1 = mesh.corners.vc[t1_row, t1_col]
-        @assert r1^2 + c1^2 + ϕ1^2 <= 1e12 "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
+        @assert r1^2 + c1^2 <= max_distance_sq "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
 
         r2 = mesh.corners.r[t2_row, t2_col]
         c2 = mesh.corners.c[t2_row, t2_col]
         ϕ2 = mesh.corners.ϕ[t2_row, t2_col]
         vr2 = mesh.corners.vr[t2_row, t2_col]
         vc2 = mesh.corners.vc[t2_row, t2_col]
-        @assert r2^2 + c2^2 + ϕ2^2 <= 1e12 "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
+        @assert r2^2 + c2^2 <= max_distance_sq "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
 
         r3 = mesh.corners.r[t3_row, t3_col]
         c3 = mesh.corners.c[t3_row, t3_col]
         ϕ3 = mesh.corners.ϕ[t3_row, t3_col]
         vr3 = mesh.corners.vr[t3_row, t3_col]
         vc3 = mesh.corners.vc[t3_row, t3_col]
-        @assert r3^2 + c3^2 + ϕ3^2 <= 1e12 "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
+        @assert r3^2 + c3^2 <= max_distance_sq "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
 
         p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
         p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
@@ -368,4 +370,10 @@ end
 
 average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1e10
 
-smallest_positive(x1::Float64, x2::Float64) = min(max(x1, 0, 0), max(x2, 0.0))
+function smallest_positive(x1::Float64, x2::Float64)
+    x1 < 0.0 && x2 < 0.0 && return -1.0
+    x1 >= 0.0 && x2 < 0.0 && return x1
+    x1 < 0.0 && x2 >= 0.0 && return x2
+    x1 >= 0.0 && x2 >= 0.0 && return min(x1, x2)
+    return -1.0
+end

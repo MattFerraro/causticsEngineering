@@ -4,7 +4,7 @@ $(SIGNATURES)
 function plot_as_quiver(
     mesh::FaceMesh;
     stride = 4,
-    scale = 300,
+    scale = 30,
     max_length = 2,
     flipxy = false,
     reverser = false,
