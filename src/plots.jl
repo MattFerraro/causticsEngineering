@@ -120,19 +120,15 @@ end
 """
 $(SIGNATURES)
 """
-function plot_loss!(D, suffix, img)
-    println("Loss:")
-    println("\tMinimum loss: $(minimum(D))")
-    println("\tMaximum loss: $(maximum(D))")
-
-    blue = zeros(size(D))
-    blue[D.>0] = D[D.>0]
-    red = zeros(size(D))
-    red[D.<0] = -D[D.<0]
-    green = zeros(size(D))
+function plot_scalar_field!(field, filename, img)
+    blue = zeros(size(field))
+    blue[field.>0] = field[field.>0]
+    red = zeros(size(field))
+    red[field.<0] = -field[field.<0]
+    green = zeros(size(field))
 
     rgbImg = RGB.(red, green, blue)'
-    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
+    save("./examples/$(filename).png", map(clamp01nan, rgbImg))
 
     # println("Saving output image:")
     # println(typeof(img))

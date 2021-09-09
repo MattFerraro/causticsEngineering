@@ -21,21 +21,29 @@ function engineer_caustics(source_image)
     )
 
     # The energy going through the lens is equal to the amount of energy on the caustics
-    total_energy_lens = height * width * 1 # 1 unit of energy per corner
+    total_energy_lens = height * width * 1     # 1 unit of energy per pixel
     total_energy_caustics = sum(imageBW)
-    correction_ratio = (width * height) / sum(imageBW)
+    correction_ratio = sum(imageBW) / (width * height)
 
     # imageBW is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
     # original image.
-    imageBW = imageBW .* correction_ratio
+    imageBW = imageBW ./ correction_ratio
 
+    # start_max_update has no particular meeting.
+    # It is basically the initial max_update. But then is used to initialise other variables so that
+    # not to stop the `while` loop on the first iteration
     start_max_update = 1_000.0
     max_update = start_max_update
     old_max_update = 2 * start_max_update
     iteration_count = 0
 
-    # while 1e-6 < abs(max_update) < start_max_update + 1 && abs((max_update - old_max_update) / old_max_update) > 0.01
-    while iteration_count < 1_024
+    while (
+        1e-6 < abs(max_update) < start_max_update + 1 &&
+        abs((max_update - old_max_update) / old_max_update) > 0.01 &&
+        iteration_count < 1_024
+    )
+        # while iteration_count < 1_024
+
         iteration_count += 1
 
         println(
@@ -95,7 +103,6 @@ function solve_velocity_potential!(mesh, image, suffix)
 
                """
 
-
     # Positive error => the triangle needs to shrink (less light)
     error_luminosity = Float64.(area_distorted_corners - image)
     @assert average_absolute(error_luminosity) """
@@ -106,25 +113,34 @@ function solve_velocity_potential!(mesh, image, suffix)
                 """
 
     # Save the loss image as a png
-    plot_loss!(error_luminosity, suffix, image)
+    println("Loss:")
+    println("\tMinimum loss: $(minimum(error_luminosity))")
+    println("\tMaximum loss: $(maximum(error_luminosity))")
+    plot_scalar_field!(error_luminosity, suffix * "_loss", image)
 
     # For the purpose of Poisson, we need to divergence to increase towards the inside: negative divergence for high luminosity
     # error_luminosity = -error_luminosity
-
     mesh_r = copy(mesh.corners.r)
     mesh_c = copy(mesh.corners.c)
     mesh_ϕ = copy(mesh.corners.ϕ)
     height, width = size(mesh.corners.ϕ)
 
+    # start_max_update has no particular meeting.
+    # It is basically the initial max_update. But then is used to initialise other variables so that
+    # not to stop the `while` loop on the first iteration
     start_max_update = 1_000.0
     max_update = start_max_update
     old_max_update = 2 * start_max_update
     iteration_count = 0
     new_divergence = 0.0
 
-    # while 1e-6 < abs(max_update) < start_max_update + 1 && abs((max_update - old_max_update) / old_max_update) > 0.01
-    # while sum(abs.(mesh.corners.ϕ - mesh_ϕ)) / (height * width) < 100
-    while new_divergence < 20.0
+    while (
+        1e-6 < abs(max_update) < start_max_update + 1 &&
+        abs((max_update - old_max_update) / old_max_update) > 0.01 &&
+        new_divergence < 20.0
+    )
+
+        # while sum(abs.(mesh.corners.ϕ - mesh_ϕ)) / (height * width) < 100
         iteration_count += 1
         iteration_count % 100 == 0 && println("Converging for intensity: $(max_update)")
 
@@ -141,7 +157,7 @@ function solve_velocity_potential!(mesh, image, suffix)
         )
 
         # Solve the Poisson equation where the divergence of the gradient of ϕ is equal to the luminosity loss.
-        ϕ, max_update = gradient_descent(mesh.corners.ϕ, error_luminosity)
+        ϕ, max_update = propagate_poisson(mesh.corners.ϕ, error_luminosity)
         mesh.corners.ϕ[:, :] .= ϕ[:, :]
 
         @assert average_absolute(mesh.corners.ϕ) """
@@ -179,7 +195,7 @@ function solve_velocity_potential!(mesh, image, suffix)
         max ϕ divergence = $(maximum(abs.(mesh.corners.ϕ[begin+1:end, begin:end-1] .- mesh_ϕ[begin:end-1, begin:end-1] .+
         mesh.corners.ϕ[begin:end-1, begin+1:end] .- mesh_ϕ[begin:end-1, begin:end-1])))
 
-    """,
+        """,
     )
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
@@ -211,8 +227,6 @@ function solve_velocity_potential!(mesh, image, suffix)
 
     return max_update
 end
-
-
 
 
 """
@@ -264,7 +278,7 @@ function move_horizontally(
             max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))
             """
 
-    corner_heights, max_update = gradient_descent(corner_heights, -divergence_direction)
+    corner_heights, max_update = propagate_poisson(corner_heights, -divergence_direction)
 
     @assert average_absolute(corner_heights) """
 
@@ -300,57 +314,78 @@ end
 $(SIGNATURES)
 
 This function implements successive over relaxation for a matrix and its associated error matrix
-There is a hardcoded assumption of Neumann boundary conditions--that the derivative across the
+There is a hardcoded assumption of Neumann boundary conditions -- that the derivative across the
 boundary must be zero in all cases. See:
 https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
 
-- ϕ is the potential to solve subject to the Poisson equation and is the same size as the corners (posts)
-- target is ∇²ϕ and is of the size of the pixels (fences)
+- ϕ is the potential to be solved subject to the Poisson equation and is the same size as the corners (posts)
+- target is ∇ϕ and is of the size of the pixels (fences)
+
+In order of how to think about the flow of the program:
+
+- High ∇ϕ (intensity loss function for the velocity potential) means that the triangles are too bright
+- High brightness => triangle are too wide: a wide triangle collects a large amount of light and focuses is
+  onto a signle pixel of the caustics.
+- Too wide => need velocity towards the centroid of the triangle to bring its corners closer and decrease its
+  surface.
+- Velocity toward the centre => divergence of the velocities should be negative. That is ∇²ϕ < 0.
+- The higher ∇ϕ (the actual loss given a particular target caustics), the lower ∇²ϕ (of the current estimated ϕ)
+  should be.
+
+In order to reduce the error, the error informs how to change the estimated ϕ.
+
+-
+δ > 0 => divergence of ϕ needs to increase
+
 
 """
-function gradient_descent(ϕ::Matrix{Float64}, ∇ϕ::Matrix{Float64})
+function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
 
     # Ensure that border conditions are as they should
-    fill_borders!(∇ϕ, 0.0)
+    fill_borders!(∇²ϕ, 0.0)
     # fill_borders!(ϕ, 0.0)
 
     @assert average_absolute(ϕ) """
 
         Relaxation: ϕ values seem too large
-            max/min ∇ϕ = $(maximum(∇ϕ)) / $(minimum(∇ϕ))
+            max/min ∇ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
             max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
 
             """
 
-    @assert average_absolute(∇ϕ) """
+    @assert average_absolute(∇²ϕ) """
 
         Relaxation: ∇²ϕ values seem too large
-            max/min ∇ϕ = $(maximum(∇ϕ)) / $(minimum(∇ϕ))
+            max/min ∇²ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
             max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
 
             """
 
-    @assert any(isnan.(ϕ)) == false "Relaxation: calling  with a ϕ that contains NaN!!"
-    @assert any(isnan.(∇ϕ)) == false "Relaxation: calling with a ∇ϕ that contains NaN!!"
+    @assert any(isnan.(ϕ)) == false "Relaxation: calling with a ϕ that contains NaN!!"
+    @assert any(isnan.(∇²ϕ)) == false "Relaxation: calling with a ∇²ϕ that contains NaN!!"
 
     # ϕ is of the same size as corners = number of corners + 1
     height_corners, width_corners = size(ϕ)
-    height_pixels, width_pixels = size(∇ϕ)
+    height_pixels, width_pixels = size(∇²ϕ)
+
+    # From the velocity potential field ϕ, we calculate its gradient (the velocity), then its divergence.
+    # This is then compared to the intensity loss
+
 
     # Laplacian
 
     # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
-    # Size of ϕ/corner is h, w. Padded matrix adds 1 row/col after
+    # Padded matrix adds 1 row/col after the size of ϕ.
     # ϕ is inserted in padded matrix within  1:height_corners+1 x 1:width_corners+1.
-    # The rest of the padded matrix (the borders) are set at 0.0.
+    # The rest of the padded matrix (its borders) are set at 0.0.
     padded_ϕ = zeros(Float64, height_corners + 1, width_corners + 1)
     padded_ϕ[1:height_corners, 1:width_corners] .= ϕ
 
     # Those values are all of ϕ's size and represent the _flow_ in each direction
-    flow_up = zeros(Float64, size(∇ϕ))
-    flow_down = zeros(Float64, size(∇ϕ))
-    flow_left = zeros(Float64, size(∇ϕ))
-    flow_right = zeros(Float64, size(∇ϕ))
+    flow_up = zeros(Float64, size(∇²ϕ))
+    flow_down = zeros(Float64, size(∇²ϕ))
+    flow_left = zeros(Float64, size(∇²ϕ))
+    flow_right = zeros(Float64, size(∇²ϕ))
 
     flow_up[1:end, 1:end] .= padded_ϕ[1:end-2, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
     flow_down[1:end, 1:end] .= padded_ϕ[3:end, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
@@ -362,20 +397,21 @@ function gradient_descent(ϕ::Matrix{Float64}, ∇ϕ::Matrix{Float64})
     fill_borders!(flow_left, 0.0)
     fill_borders!(flow_right, 0.0)
 
-    # Target position. The target is the current height map smoothed by averaging to which the
-    # flow is added.
+    # Target position. The target is the current height map smoothed by averaging to which the flow is added.
     # This has to converge towards the ∇ϕ. Difference to calculate speed of the descent.
-    # δ = (flow_up + flow_down + flow_left + flow_right) + ∇ϕ
+    # δ = (flow_up + flow_down + flow_left + flow_right) + ∇²ϕ
 
-    # δ is the difference between the desired divergence and the current one
-    # High ∇ϕ means that the triangles are too bright.
-    δ = ∇ϕ - (flow_up + flow_down + flow_left + flow_right)
+    # δ is the difference between the divergence of the intensity loss (in the case of the velocity potential)
+    # and  the current one for the current field ϕ (divergence of its gradient).
+    #
+    # High intensity loss ∇ϕ means that the triangles are too bright, too large.
+    δ = ∇²ϕ - (flow_up + flow_down + flow_left + flow_right)
 
     @assert average_absolute(δ) """
 
-        Relaxation: ∇ϕ_error as (current - target) seem too large
-            max/min target ∇ϕ = $(maximum(∇ϕ)) / $(minimum(∇ϕ))
-            max/min ∇ϕ_error = $(maximum(δ)) / $(minimum(δ))
+        Relaxation: ∇²ϕ_error as (current - target) seem too large
+            max/min target ∇²ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
+            max/min ∇²ϕ_error = $(maximum(δ)) / $(minimum(δ))
 
             max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
             max/min padded_ϕ = $(maximum(padded_ϕ)) / $(minimum(padded_ϕ))
@@ -386,11 +422,11 @@ function gradient_descent(ϕ::Matrix{Float64}, ∇ϕ::Matrix{Float64})
 
             """
 
-    # @. target_map[height_div, width_div] += ∇ϕ / 4.0
-    # fill_borders!(∇ϕ_error, 0.0)
+    # @. target_map[height_div, width_div] += ∇²ϕ / 4.0
+    # fill_borders!(∇²ϕ_error, 0.0)
 
     # Let the heightmap converge towards the target at a slow rate = gradient descent.
-    # @. ϕ += 0.2 * ∇ϕ_error
+    # @. ϕ += 0.2 * ∇²ϕ_error
 
     maximum_δ = maximum(abs.(δ))
     max_correction_ratio = 2.0
@@ -400,15 +436,6 @@ function gradient_descent(ϕ::Matrix{Float64}, ∇ϕ::Matrix{Float64})
     else
         correction_ratio = max_correction_ratio / maximum_δ
     end
-
-    # High ∇ϕ (loss function) means that the triangles are too bright
-    # High brightness => triangle are too wide
-    # Too wide => need velocity towards the centre
-    # Velocity toward the centre => divergence should be negative
-
-    # Negative divergence means that the field should increase towards the inside
-
-    # δ > 0 => divergence of ϕ needs to increase
 
     # Increase
     @. ϕ[1:height_pixels, 1:width_pixels] +=
@@ -448,29 +475,25 @@ end
 """
 $(SIGNATURES)
 """
-function quantify_loss(D, suffix, img)
-    println("Loss:")
-    println("\tMinimum loss: $(minimum(D))")
-    println("\tMaximum loss: $(maximum(D))")
+function plot_scalar_field(scalar_field, suffix, img)
+    normalised_D_max = scalar_field ./ maximum(scalar_field)
+    normalised_D_min = scalar_field ./ minimum(scalar_field)
 
-    normalised_D_max = D ./ maximum(D)
-    normalised_D_min = D ./ minimum(D)
-
-    blue = zeros(size(D))
-    blue[D.>0] = normalised_D_max[D.>0]
-    red = zeros(size(D))
-    red[D.<0] = -normalised_D_min[D.<0]
-    green = zeros(size(D))
+    blue = zeros(size(scalar_field))
+    blue[scalar_field.>0] = normalised_D_max[scalar_field.>0]
+    red = zeros(size(scalar_field))
+    red[scalar_field.<0] = -normalised_D_min[scalar_field.<0]
+    green = zeros(size(scalar_field))
 
     rgbImg = RGB.(red, green, blue)'
-    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
+    save("./examples/$(suffix)_loss.png", map(clamp01nan, rgbImg))
 
     println("Saving output image:")
     println(typeof(img))
-    E = Gray.(D)
+    E = Gray.(scalar_field)
     println(typeof(E))
     outputImg = img - E
-    save("./examples/actual_$(suffix).png", outputImg)
+    save("./examples/$(suffix)_actual.png", outputImg)
 end
 
 
