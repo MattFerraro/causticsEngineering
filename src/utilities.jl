@@ -162,7 +162,13 @@ function Vertex3D(fv::FieldVertex3D, row, col)
     height, width = size(fv)
 
     if (1 <= row <= height + 1) && (1 <= col <= width + 1)
-        Vertex3D(fv.r[row, col], fv.y[row, col], fv.ϕ[row, col], fv.vr[row, col], fv.vc[row, col])
+        Vertex3D(
+            fv.r[row, col],
+            fv.y[row, col],
+            fv.ϕ[row, col],
+            fv.vr[row, col],
+            fv.vc[row, col],
+        )
     else
         missing
     end
@@ -200,8 +206,16 @@ struct FaceMesh
 
     function FaceMesh(height::Int, width::Int)
         m_corner = FieldVertex3D(height, width)
-        t_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(undef, height, width)
-        b_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(undef, height, width)
+        t_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
+            undef,
+            height,
+            width,
+        )
+        b_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
+            undef,
+            height,
+            width,
+        )
 
         for row ∈ 1:height, col ∈ 1:width
             t_triangles[row, col] = ((row, col), (row + 1, col), (row, col + 1))
@@ -229,7 +243,10 @@ struct Triangle
     points::Tuple{Int,Int,Int}
 
     function Triangle(mesh::FaceMesh)
-        return Triangle(mesh, Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)))
+        return Triangle(
+            mesh,
+            Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)),
+        )
     end
 end
 
@@ -286,7 +303,8 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
     end
 end
 
-triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}, side = Union{:top,:bottom}) = triangle3D(mesh, ci[1], ci[2], side)
+triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}, side = Union{:top,:bottom}) =
+    triangle3D(mesh, ci[1], ci[2], side)
 
 
 """
@@ -375,10 +393,12 @@ has been shifted and flexed around.
 function get_area_corners(mesh::FaceMesh)
     height, width = size(mesh)
 
-    top_tri_area = [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
+    top_tri_area =
+        [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
     @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
 
-    bot_tri_area = [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
+    bot_tri_area =
+        [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
     @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
 
     return top_tri_area + bot_tri_area

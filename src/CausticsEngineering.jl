@@ -27,7 +27,24 @@ function main()
     return engineer_caustics(img)
 end
 
-export Meters_Per_Pixel,
-    Vertex3D, FieldVertex3D, FaceMesh, main, engineer_caustics, create_solid
+export
+    # Constants
+    Meters_Per_Pixel,
+    Bottom_Offset,
+    Top_Offset,
+
+    # Types
+    Vertex3D,
+    FieldVertex3D,
+    FaceMesh,
+
+    # Mesh
+    create_solid,
+    create_solid_as_dict,
+
+    # Main procedures
+    main,
+    engineer_caustics
+
 
 end # End module

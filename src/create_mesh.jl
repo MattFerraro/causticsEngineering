@@ -107,7 +107,7 @@ function solve_velocity_potential!(mesh, image, suffix)
     while (
         1e-6 < abs(max_update) < start_max_update + 1 &&
         abs((max_update - old_max_update) / old_max_update) > 0.01 &&
-        new_divergence < 20.0
+        new_divergence < 100.0
     )
 
         # while sum(abs.(mesh.corners.ϕ - mesh_ϕ)) / (height * width) < 100
@@ -175,16 +175,16 @@ function solve_velocity_potential!(mesh, image, suffix)
     march_mesh!(mesh)
 
     save_stl!(
-        matrix_to_mesh(mesh.corners.ϕ * 0.02),
+        matrix_to_mesh(mesh.corners.ϕ * 0.01),
         "./examples/phi_$(suffix).obj",
         reverse = false,
-        flipxy = true,
+        flipxy = false,
     )
 
     # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reverser=false, reversec=false)
     plot_as_quiver(
         mesh,
-        stride = 30,
+        stride = 20,
         scale = 1.0,
         max_length = 200,
         flipxy = true,

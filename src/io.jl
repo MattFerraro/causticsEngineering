@@ -89,8 +89,8 @@ $(SIGNATURES)
 
 """
 function save_stl!(
-    triangle_index::AbstractDict{},
-    vertex_index::AbstractDict{},
+    triangle_index::AbstractVector{},
+    vertex_index::AbstractVector{},
     filename::String;
     scale = 1.0,
     scaleh = 1.0,

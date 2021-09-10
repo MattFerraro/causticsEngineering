@@ -239,17 +239,43 @@ function create_solid(
     top_distance = Top_Offset,
 )
 
-    triangle_dict, vertex_dict =
-        create_solid(mesh; bottom_distance = Bottom_Offset, top_distance = Top_Offset)
-    index_dict = Dict(String, Int64)()
+    triangle_dict, vertex_dict = create_solid_as_dict(
+        mesh;
+        bottom_distance = Bottom_Offset,
+        top_distance = Top_Offset,
+    )
 
+    _, _, triangle_index, vertex_index = create_solid(
+        triangle_dict,
+        vertex_dict;
+        bottom_distance = bottom_distance,
+        top_distance = top_distance,
+    )
+
+    return triangle_dict, vertex_dict, triangle_index, vertex_index
+end
+
+
+
+"""
+$(SIGNATURES)
+
+"""
+function create_solid(
+    triangle_dict::Dict{String,Vector{String}},
+    vertex_dict::Dict{String,Tuple{Float64,Float64,Float64}};
+    bottom_distance = Bottom_Offset,
+    top_distance = Top_Offset,
+)
+
+    index_dict = Dict{String,Int64}()
     count = 0
     for k ∈ keys(vertex_dict)
         count += 1
         index_dict[k] = count
     end
 
-    vertex_index = [(index_dict[v], v[1], v[2], v[3]) for (k, v) ∈ values(vertex_dict)]
+    vertex_index = [(index_dict[k], v[1], v[2], v[3]) for (k, v) ∈ vertex_dict]
     triangle_index = [
         (index_dict[v[1]], index_dict[v[2]], index_dict[v[3]]) for
         v ∈ values(triangle_dict)
