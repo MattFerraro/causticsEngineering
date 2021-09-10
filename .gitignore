@@ -6,6 +6,7 @@
 *.jl.*.cov
 
 *.obj
+it*.png
 loss*.png
 
 

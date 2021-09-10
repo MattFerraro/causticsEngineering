@@ -1,6 +1,15 @@
 using FileIO, MeshIO
 
 
+# Utility function to name a vertex
+vertex_name(face::String, row::Int64, col::Int64)::String = "Vertex_$(name)_$(row)_$(col)"
+
+# Utility functions to create the names
+triangle_name(face::String, row::Int64, col::Int64, side::Union{Symbol,Symbol})::String =
+    "Tri_$(face)_$(row)_$(col)_$(side)"
+
+
+
 """
 $(SIGNATURES)
 
@@ -73,6 +82,50 @@ function save_stl!(
         println(io, "endsolid engineered_caustics")
     end
 end
+
+
+"""
+$(SIGNATURES)
+
+"""
+function save_stl!(
+    triangle_index::AbstractDict{},
+    vertex_index::AbstractDict{},
+    filename::String;
+    scale = 1.0,
+    scaleh = 1.0,
+    reverse = false,
+    flipxy = false,
+)
+
+    open(filename, "w") do io
+        println(io, "solid engineered_caustics")
+
+        for i ∈ 1:length(vertex_index)
+            if flipxy
+                println(
+                    io,
+                    "v $(vertex_index[2] * scale) $(vertex_index[1] * scale) $(vertex_index[3] * scaleh)",
+                )
+            else
+                println(
+                    io,
+                    "v $(vertex_index[1] * scale) $(vertex_index[2] * scale) $(vertex_index[3] * scaleh)",
+                )
+            end
+        end
+
+        for i ∈ 1:length(triangle_index)
+            println(
+                io,
+                "f $(triangle_index[i][1]) $(triangle_index[i][2]) $(triangle_index[i][3])",
+            )
+        end
+
+        println(io, "endsolid engineered_caustics")
+    end
+end
+
 
 
 """

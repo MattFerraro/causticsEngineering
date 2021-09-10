@@ -11,14 +11,6 @@ function engineer_caustics(source_image)
     # cover each image corner with a triangle.
     mesh = FaceMesh(height, width)
     # println("Mesh creation: ")
-    r_check = 256
-    c_check = 256
-    println(
-        "\tCoordinates: $(mesh.corners.r[r_check, c_check]) , $(mesh.corners.c[r_check, c_check]) , $(mesh.corners.ϕ[r_check, c_check])",
-    )
-    println(
-        "\tVelocities: $(mesh.corners.vr[r_check, c_check]) , $(mesh.corners.vc[r_check, c_check])",
-    )
 
     # The energy going through the lens is equal to the amount of energy on the caustics
     total_energy_lens = height * width * 1     # 1 unit of energy per pixel
@@ -42,8 +34,6 @@ function engineer_caustics(source_image)
         abs((max_update - old_max_update) / old_max_update) > 0.01 &&
         iteration_count < 1_024
     )
-        # while iteration_count < 1_024
-
         iteration_count += 1
 
         println(
@@ -53,32 +43,12 @@ function engineer_caustics(source_image)
         old_max_update = max_update
         max_update = solve_velocity_potential!(mesh, imageBW, "it$(iteration_count)")
         print("Vertical move max update = $(max_update) \n")
-
-        # println(
-        #     "\tCoordinates: $(mesh.corners.r[r_check, c_check]) , $(mesh.corners.c[r_check, c_check]) , $(mesh.corners.ϕ[r_check, c_check])",
-        # )
-        # println(
-        #     "\tVelocities: $(mesh.corners.vr[r_check, c_check]) , $(mesh.corners.vc[r_check, c_check])",
-        # )
     end
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
     ϕ, max_update = move_horizontally(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
     mesh.corners.ϕ .= ϕ
     println(" max update = $(max_update)")
-
-
-
-    println("$(mesh.corners.vr[r_check, c_check]) , $(mesh.corners.vc[r_check, c_check])")
-
-
-    # solidMesh = create_solid(mesh)
-    # save_stl!(
-    #     solidMesh,
-    #     "./examples/original_image.obj",
-    #     scale = Float64(1 / Grid_Definition * Artifact_Size),
-    #     scaleh = Float64(1 / Grid_Definition * Artifact_Size),
-    # )
 
     return mesh, imageBW
 end
@@ -156,7 +126,8 @@ function solve_velocity_potential!(mesh, image, suffix)
         """,
         )
 
-        # Solve the Poisson equation where the divergence of the gradient of ϕ is equal to the luminosity loss.
+        # Solve the Poisson equation where the divergence of the gradient of ϕ is equal to the luminosity error.
+        # High error => Too much luminosity.
         ϕ, max_update = propagate_poisson(mesh.corners.ϕ, error_luminosity)
         mesh.corners.ϕ[:, :] .= ϕ[:, :]
 
@@ -278,35 +249,18 @@ function move_horizontally(
             max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))
             """
 
-    corner_heights, max_update = propagate_poisson(corner_heights, -divergence_direction)
+    true_H, max_update = propagate_poisson(true_H, -divergence_direction)
 
-    @assert average_absolute(corner_heights) """
+    @assert average_absolute(true_H) """
 
         ALERT: horiz. Δ corner_heights is too large
-        max/min corner_heights = $(maximum(corner_heights)) / $(minimum(corner_heights))
+        max/min corner_heights = $(maximum(true_H)) / $(minimum(true_H))
         """
 
-    println(
-        "Convergence horiz. Δ stopped improving at step $(iteration_count) ",
-        "with max_update of $(max_update)",
-    )
-
-
-    # println("""
-    #     Convergence stopped at step $(iteration_count) with
-    #         max_update = $(max_update)
-    #         max/min area_distorted_corners = $(maximum(area_distorted_corners)) / $(minimum(area_distorted_corners))
-    #         max error_luminosity = $(maximum(abs.(error_luminosity)))
-
-    #         Average mesh changes on row = $(sum(abs.(mesh.corners.r - mesh_r)) / (height * width))  --  CHECK == 0.0
-    #         Average mesh changes on col = $(sum(abs.(mesh.corners.c - mesh_c)) / (height * width))  --  CHECK == 0.0
-    #         Average mesh changes on ϕ = $(sum(abs.(mesh.corners.ϕ - mesh_ϕ)) / (height * width))
-
-    #     """
-    # )
+    println("Convergence horiz. Δ stopped with max_update of $(max_update)")
 
     # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
-    return corner_heights, max_update
+    return true_H, max_update
 end
 
 
@@ -343,8 +297,6 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
 
     # Ensure that border conditions are as they should
     fill_borders!(∇²ϕ, 0.0)
-    # fill_borders!(ϕ, 0.0)
-
     @assert average_absolute(ϕ) """
 
         Relaxation: ϕ values seem too large
@@ -373,63 +325,36 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
 
 
     # Laplacian
+    # Those values are all of ϕ's size and represent the  second order approximation of the
+    # Laplacian of ϕ.
+    Lϕ = laplacian(ϕ)
+    @assert average_absolute(Lϕ) """
 
-    # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
-    # Padded matrix adds 1 row/col after the size of ϕ.
-    # ϕ is inserted in padded matrix within  1:height_corners+1 x 1:width_corners+1.
-    # The rest of the padded matrix (its borders) are set at 0.0.
-    padded_ϕ = zeros(Float64, height_corners + 1, width_corners + 1)
-    padded_ϕ[1:height_corners, 1:width_corners] .= ϕ
+        Relaxation: Laplacian of ϕ a seem too large
+            max/min target Lϕ = $(maximum(Lϕ)) / $(minimum(Lϕ))
+            max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
 
-    # Those values are all of ϕ's size and represent the _flow_ in each direction
-    flow_up = zeros(Float64, size(∇²ϕ))
-    flow_down = zeros(Float64, size(∇²ϕ))
-    flow_left = zeros(Float64, size(∇²ϕ))
-    flow_right = zeros(Float64, size(∇²ϕ))
-
-    flow_up[1:end, 1:end] .= padded_ϕ[1:end-2, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
-    flow_down[1:end, 1:end] .= padded_ϕ[3:end, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
-    flow_left[1:end, 1:end] .= padded_ϕ[2:end-1, 1:end-2] - padded_ϕ[2:end-1, 2:end-1]
-    flow_right[1:end, 1:end] .= padded_ϕ[2:end-1, 3:end] - padded_ϕ[2:end-1, 2:end-1]
-
-    fill_borders!(flow_up, 0.0)
-    fill_borders!(flow_down, 0.0)
-    fill_borders!(flow_left, 0.0)
-    fill_borders!(flow_right, 0.0)
-
-    # Target position. The target is the current height map smoothed by averaging to which the flow is added.
-    # This has to converge towards the ∇ϕ. Difference to calculate speed of the descent.
-    # δ = (flow_up + flow_down + flow_left + flow_right) + ∇²ϕ
+            """
 
     # δ is the difference between the divergence of the intensity loss (in the case of the velocity potential)
     # and  the current one for the current field ϕ (divergence of its gradient).
     #
-    # High intensity loss ∇ϕ means that the triangles are too bright, too large.
-    δ = ∇²ϕ - (flow_up + flow_down + flow_left + flow_right)
-
+    # High intensity loss ∇²ϕ means that the triangles are too bright, too large.
+    # This has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
+    δ = Lϕ - ∇²ϕ
     @assert average_absolute(δ) """
 
-        Relaxation: ∇²ϕ_error as (current - target) seem too large
-            max/min target ∇²ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
-            max/min ∇²ϕ_error = $(maximum(δ)) / $(minimum(δ))
-
+        Relaxation: difference between intensity loss and estimated Laplacian seem too large
+            max/min δ = $(maximum(δ)) / $(minimum(δ))
+            max/min target Lϕ = $(maximum(Lϕ)) / $(minimum(Lϕ))
             max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
-            max/min padded_ϕ = $(maximum(padded_ϕ)) / $(minimum(padded_ϕ))
-            max/min flow_up = $(maximum(flow_up)) / $(minimum(flow_up))
-            max/min flow_down = $(maximum(flow_down)) / $(minimum(flow_down))
-            max/min flow_left = $(maximum(flow_left)) / $(minimum(flow_left))
-            max/min flow_right = $(maximum(flow_right)) / $(minimum(flow_right))
 
             """
 
-    # @. target_map[height_div, width_div] += ∇²ϕ / 4.0
-    # fill_borders!(∇²ϕ_error, 0.0)
-
-    # Let the heightmap converge towards the target at a slow rate = gradient descent.
-    # @. ϕ += 0.2 * ∇²ϕ_error
-
     maximum_δ = maximum(abs.(δ))
-    max_correction_ratio = 2.0
+
+    # We limit the changes of the potential to a maximum
+    max_correction_ratio = 10.0
 
     if 1.94 / 4.0 * maximum_δ < max_correction_ratio
         correction_ratio = 1.94 / 4.0
@@ -437,7 +362,12 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
         correction_ratio = max_correction_ratio / maximum_δ
     end
 
-    # Increase
+    # if δ > 0, the intensity loss is too high, or the Laplacian is too high at that point.
+    # => increase flow towards outside
+    # => decrease the flow towards the inside.
+    # => increase divergence of the flow
+    # => increase the height of the potential there so that gradient are locally increasing
+    # => correction has to be of the same sign as δ.
     @. ϕ[1:height_pixels, 1:width_pixels] +=
         correction_ratio * δ[1:height_pixels, 1:width_pixels]
     @assert !any(isnan.(ϕ)) "Relaxation: Updated ϕ contains NaN!!"
@@ -447,111 +377,6 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
     return ϕ, max_update
 end
 
-
-"""
-$(SIGNATURES)
-
-A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
-area in the x, y plane. h is ignored.
-
-The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
-has been shifted and flexed around.
-"""
-function get_area_corners(mesh::FaceMesh)
-    height, width = size(mesh)
-
-    top_tri_area =
-        [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
-    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
-
-    bot_tri_area =
-        [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
-    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
-
-    return top_tri_area + bot_tri_area
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function plot_scalar_field(scalar_field, suffix, img)
-    normalised_D_max = scalar_field ./ maximum(scalar_field)
-    normalised_D_min = scalar_field ./ minimum(scalar_field)
-
-    blue = zeros(size(scalar_field))
-    blue[scalar_field.>0] = normalised_D_max[scalar_field.>0]
-    red = zeros(size(scalar_field))
-    red[scalar_field.<0] = -normalised_D_min[scalar_field.<0]
-    green = zeros(size(scalar_field))
-
-    rgbImg = RGB.(red, green, blue)'
-    save("./examples/$(suffix)_loss.png", map(clamp01nan, rgbImg))
-
-    println("Saving output image:")
-    println(typeof(img))
-    E = Gray.(scalar_field)
-    println(typeof(E))
-    outputImg = img - E
-    save("./examples/$(suffix)_actual.png", outputImg)
-end
-
-
-
-
-"""
-$(SIGNATURES)
-
-Given 3 points and their velocities, calculate the time `t` required to bring the area of that triangle to zero
-"""
-function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
-    # Three points A, B and C, with coordinates (x, y)
-    # The area of a triangle is 1/2 * [ Ax (By - Cy) + Bx (Cy - Ay) + Cx (Ay - By)]
-    # where each point of the triangle is where it will be after time t
-    # i.e. a point goes from P to P+tV where V is the velocity of that point.
-    # Notation is here B -> B + t_vB
-
-    # To make the calculation simpler, everything is translated so that A is at the
-    # origin of the plane and its velocity is nil.
-    Br = p2.r - p1.r
-    Bc = p2.c - p1.c
-    Cr = p3.r - p1.r
-    Cc = p3.c - p1.c
-
-    t_vBr = p2.vr - p1.vr
-    t_vBc = p2.vc - p1.vc
-    t_vCr = p3.vr - p1.vr
-    t_vCc = p3.vc - p1.vc
-
-    # After this, given that Ar = Ac = t_vAr = t_vAc = 0, the area is nil iff
-    # (Br + t_vBr) (Cc + t_vCc ) - (Cr + t_vCr) (Bc + t_vBc) = 0.
-    # After expansion and reshuffling to have a quadratic equation where t
-    # is the variable, the coefficients of that equation are:
-    a = t_vCc * t_vBr - t_vBc * t_vCr
-    b = -Bc * t_vCr - Cr * t_vBc + Br * t_vCc + Cc * t_vBr
-    c = Br * Cc - Cr * Bc
-
-    # if a = 0, this is just a linear equation.
-    if a == 0 && b != 0
-        return smallest_positive(-c / b, c / b)
-    else
-        discriminant = b^2 - 4a * c
-
-        # If there is a solution
-        if discriminant >= 0
-            d = sqrt(discriminant)
-            return smallest_positive((-b - d) / 2a, (-b + d) / 2a)
-        end
-    end
-    # There can be no solution if, after translation, B abd C move in parallel direction.
-    # C will never end up on the line AB.
-    # Very unlikely with Float64.
-    # Negative numbers are filtered out when calculating the minimum jiggle ratio
-    return -1.0
-end
-
-
-find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])
 
 
 """
@@ -596,24 +421,6 @@ function march_mesh!(mesh::FaceMesh)
 
     # Get the time, at that velocity, for the area of the triangle to be nil.
     # We are only interested by positive values to only move in the direction of the gradient
-
-    # list_triangles = vcat(
-    #     [triangle3D(mesh, row, col, :top) for row ∈ 1:height-1, col ∈ 1:width-1],
-    #     [triangle3D(mesh, row, col, :bottom) for row ∈ 1:height-1, col ∈ 1:width-1],
-    # )
-    # list_maximum_t = [time  for time ∈ find_maximum_t.(list_triangles)
-    #                         if !isnan(time) && time > 0.0 && time < 10.0]
-
-    # if !isempty(list_maximum_t)
-    #     min_positive_t = minimum(list_maximum_t)
-
-    #     # @assert all(typeof.(t1) .== Float64) && all(typeof.(t2) .== Float64) "March mesh: Maximum times are not numerical at $(row), $(col)"
-
-    #     δ = min_positive_t / 2.0
-    #     mesh.corners.r -= δ .* ∇ϕᵤ
-    #     mesh.corners.c -= δ .* ∇ϕᵥ
-    # end
-
     for row ∈ 1:height-1, col ∈ 1:width-1
         list_triangles =
             [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom)]
@@ -629,8 +436,9 @@ function march_mesh!(mesh::FaceMesh)
 
             max_shift = max(abs(∇ϕᵤ[row, col]), abs(∇ϕᵥ[row, col]))
 
-            # No shift more than 0.5 pixels
-            δ = min(min_positive_t / 2.0, 5.0 / max_shift)
+            # No shift more than 20 pixels
+            max_pixel_move = 20.0
+            δ = min(min_positive_t / 2.0, max_pixel_move / max_shift)
             mesh.corners.r[row, col] =
                 clamp(mesh.corners.r[row, col] + δ * ∇ϕᵤ[row, col], 1, height - 1)
             mesh.corners.c[row, col] =
@@ -642,9 +450,6 @@ function march_mesh!(mesh::FaceMesh)
     # Reset the border at the fixed values fixed coordinates.
     reset_border_values!(mesh.corners)
 
-    # δ = $(δ)
-    # first minimum ts: $(list_maximum_t[1:5])
-
     println(
         """
     March mesh:
@@ -655,11 +460,6 @@ function march_mesh!(mesh::FaceMesh)
 
         """,
     )
-
-    # println("Overall maximum variations:")
-    # println("\tOverall min_positive_t: $(min_positive_t)")
-    # println("\tOverall max_negative_t: $(max_negative_t)")
-    # println("\tUsing δ: $(δ)")
 
     # saveObj(mesh, "gateau.obj")
 end
@@ -679,129 +479,4 @@ function ∇(ϕ::Matrix{Float64})
     fill_borders!(∇ϕᵥ, 0.0)
 
     return ∇ϕᵤ, ∇ϕᵥ
-end
-
-
-"""
-$(SIGNATURES)
-
-This function will take a `grid_definition x grid_definition` matrix and returns a
-`grid_definition x grid_definition` mesh.
-
-"""
-function matrix_to_mesh(ϕ::Matrix{Float64})
-    height, width = size(ϕ)
-
-    mesh = FaceMesh(height, width)
-
-    # 1 more corner than corners! Therefore compiler needs to specify exact indices.
-    mesh.corners.ϕ[1:height, 1:width] .= ϕ[1:height, 1:width]
-
-    # The borders' height is forced at 0.
-    reset_border_values!(mesh.corners)
-
-    return mesh
-end
-
-
-"""
-$(SIGNATURES)
-
-TO REFACTOR.
-"""
-function create_solid(
-    mesh::FaceMesh;
-    bottom_offset = Bottom_Offset / Meters_Per_Pixel,
-    top_offset = Top_Offset / Meters_Per_Pixel,
-)
-    height, width = size(mesh)
-
-
-    ###
-    ### Top mesh
-    ###
-    # List top mesh top triangles
-    list_triangles_top_top = [top_triangles(mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
-
-    # List top mesh bottom triangles
-    list_triangles_top_bottom = [bottom_triangle(mesh, r, c) for r ∈ 1:height, c ∈ 1:width]
-
-
-    ###
-    ### Botttom mesh
-    ###
-    # Build the bottom surface which is prepopulated by its constructor. However, its height is incorrect.
-
-    # Coordinates on the caustics
-    rows = repeat(Float64.(1:height), 1, width)
-    cols = repeat(Float64.(1:width)', height, 1)
-
-    bottom_mesh = FaceMesh(height, width)
-    bottom_mesh.corner.r[:] .= rows[:]
-    bottom_mesh.corner.c[:] .= cols[:]
-    bottom_mesh.corner.ϕ[:] .= -Bottom_Offset
-    bottom_mesh.corner.vr[:] .= 0.0
-    bottom_mesh.corner.vr[:] .= 0.0
-
-
-    ###
-    ### Side meshes
-    ###
-    # Build triangles to create side meshes and close the mesh
-    # The mesh is made of a single top/bottom triangles joining the bottom face
-    # and the top face.
-
-    # (Looking from above), left side.
-
-    list_triangles = []
-    col = 1
-    for row = 1:height
-        count += 1
-
-        ll = (row - 1) * width + col
-        ul = ll + totalNodes / 2
-        lr = row * width + col
-        ur = lr + totalNodes / 2
-        triangles[2*count-1] = Triangle(ll, ul, ur)
-        triangles[2*count] = Triangle(ur, lr, ll)
-    end
-
-    mesh_right = FaceMesh(height, 1)
-    for row = 1:(height-1)
-        count += 1
-
-        ll = (row - 1) * width + col
-        ul = ll + totalNodes / 2
-        lr = row * width + col
-        ur = lr + totalNodes / 2
-        triangles[2*count-1] = Triangle(ll, ur, ul)
-        triangles[2*count] = Triangle(ur, ll, lr)
-    end
-
-    mesh_up = FaceMesh(1, width)
-    row = 1
-    for col = 2:width
-        count += 1
-
-        ll = (row - 1) * width + col
-        ul = ll + totalNodes / 2
-        lr = (row - 1) * width + (col - 1)
-        ur = lr + totalNodes / 2
-        triangles[2*count-1] = Triangle(ll, ul, ur)
-        triangles[2*count] = Triangle(ur, lr, ll)
-    end
-
-    mesh_down = FaceMesh(1, width)
-    for col = 2:width
-        count += 1
-
-        ll = (row - 1) * width + col
-        ul = ll + totalNodes / 2
-        lr = (row - 1) * width + (col - 1)
-        ur = lr + totalNodes / 2
-        triangles[2*count-1] = Triangle(ll, ur, ul)
-        triangles[2*count] = Triangle(ur, ll, lr)
-    end
-
-    return RectangleMesh(nodeList, nodeArrarowBottom, triangles, width, height)
 end

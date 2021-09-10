@@ -6,6 +6,22 @@ image = Images.load("./examples/cat_posing.jpg"); # Check current working direct
 using CausticsEngineering
 mesh, imageBW = engineer_caustics(image);
 
+triangle_dict, vertex_dict, triangle_index, vertex_index = create_solid(mesh)
+
+save_stl!(
+    triangle_index, vertex_index,
+    "./examples/result_mesh.obj",
+    scale = Float64(Meters_Per_Pixel),
+    scaleh = Float64(Meters_Per_Pixel),
+)
+
+
+
+
+
+
+
+
 
 Gray.(imageBW)
 
@@ -187,3 +203,43 @@ s = (ab + ac + cb) / 2.0
 s - ab
 s - ab
 s - ab
+
+[[0 1 0], [1 -4 1], [0 1 0]]
+
+
+    flow_up = zeros(Float64, size(∇²ϕ))
+    flow_down = zeros(Float64, size(∇²ϕ))
+    flow_left = zeros(Float64, size(∇²ϕ))
+    flow_right = zeros(Float64, size(∇²ϕ))
+
+    flow_up[1:end, 1:end] .= padded_ϕ[1:end-2, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
+    flow_down[1:end, 1:end] .= padded_ϕ[3:end, 2:end-1] - padded_ϕ[2:end-1, 2:end-1]
+    flow_left[1:end, 1:end] .= padded_ϕ[2:end-1, 1:end-2] - padded_ϕ[2:end-1, 2:end-1]
+    flow_right[1:end, 1:end] .= padded_ϕ[2:end-1, 3:end] - padded_ϕ[2:end-1, 2:end-1]
+
+    fill_borders!(flow_up, 0.0)
+    fill_borders!(flow_down, 0.0)
+    fill_borders!(flow_left, 0.0)
+    fill_borders!(flow_right, 0.0)
+
+
+
+
+end
+
+ϕ
+
+k = ([[0.0 1.0 0.0]; [1.0 -4.0 1.0]; [0.0 1.0 0.0]])
+
+m = [[0.0 1.0 0.0 4.0]; [1.0 -4.0 1.0 2.0]; [0.0 1.0 0.0 3.0]; [1.0 -4.0 1.0 2.0]]
+p = zeros(Float64, 4, 4)
+
+
+p[1, 1] = sum(m[1:3, 1:3] .* k)
+p
+
+vertex_dict = Dict{String, Tuple{Float64, Float64, Float64}}()
+
+name = "a"
+vertex_dict[name] = (1.0, 1.0, 1.0)
+vertex_dict

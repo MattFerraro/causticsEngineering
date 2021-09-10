@@ -8,6 +8,8 @@ gr()
 
 include("parameters.jl")
 include("utilities.jl")
+include("math_utilities.jl")
+include("mesh.jl")
 include("io.jl")
 include("plots.jl")
 
@@ -25,6 +27,7 @@ function main()
     return engineer_caustics(img)
 end
 
-export Vertex3D, FieldVertex3D, FaceMesh, main, engineer_caustics
+export Meters_Per_Pixel,
+    Vertex3D, FieldVertex3D, FaceMesh, main, engineer_caustics, create_solid
 
 end # End module

@@ -162,13 +162,7 @@ function Vertex3D(fv::FieldVertex3D, row, col)
     height, width = size(fv)
 
     if (1 <= row <= height + 1) && (1 <= col <= width + 1)
-        Vertex3D(
-            fv.r[row, col],
-            fv.y[row, col],
-            fv.ϕ[row, col],
-            fv.vr[row, col],
-            fv.vc[row, col],
-        )
+        Vertex3D(fv.r[row, col], fv.y[row, col], fv.ϕ[row, col], fv.vr[row, col], fv.vc[row, col])
     else
         missing
     end
@@ -206,16 +200,8 @@ struct FaceMesh
 
     function FaceMesh(height::Int, width::Int)
         m_corner = FieldVertex3D(height, width)
-        t_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
-            undef,
-            height,
-            width,
-        )
-        b_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(
-            undef,
-            height,
-            width,
-        )
+        t_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(undef, height, width)
+        b_triangles = Matrix{Tuple{Tuple{Int,Int},Tuple{Int,Int},Tuple{Int,Int}}}(undef, height, width)
 
         for row ∈ 1:height, col ∈ 1:width
             t_triangles[row, col] = ((row, col), (row + 1, col), (row, col + 1))
@@ -225,9 +211,6 @@ struct FaceMesh
         return FaceMesh((height, width), m_corner, t_triangles, b_triangles)
     end
 end
-
-
-
 
 
 """
@@ -246,10 +229,7 @@ struct Triangle
     points::Tuple{Int,Int,Int}
 
     function Triangle(mesh::FaceMesh)
-        return Triangle(
-            mesh,
-            Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)),
-        )
+        return Triangle(mesh, Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)))
     end
 end
 
@@ -306,9 +286,7 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
     end
 end
 
-triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}, side = Union{:top,:bottom}) =
-    triangle3D(mesh, ci[1], ci[2], side)
-
+triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}, side = Union{:top,:bottom}) = triangle3D(mesh, ci[1], ci[2], side)
 
 
 """
@@ -368,12 +346,40 @@ function area(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom})
 end
 
 
-average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1e10
+"""
+$(TYPEDEF)
+"""
+struct MeshVertex
+    id::Int64
+    tri::Vertex3D
+end
 
-function smallest_positive(x1::Float64, x2::Float64)
-    x1 < 0.0 && x2 < 0.0 && return -1.0
-    x1 >= 0.0 && x2 < 0.0 && return x1
-    x1 < 0.0 && x2 >= 0.0 && return x2
-    x1 >= 0.0 && x2 >= 0.0 && return min(x1, x2)
-    return -1.0
+
+"""
+$(TYPEDEF)
+"""
+struct MeshTriangle
+    tri::Tuple{Int64}
+end
+
+
+"""
+$(SIGNATURES)
+
+A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
+area in the x, y plane. h is ignored.
+
+The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
+has been shifted and flexed around.
+"""
+function get_area_corners(mesh::FaceMesh)
+    height, width = size(mesh)
+
+    top_tri_area = [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
+    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
+
+    bot_tri_area = [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
+    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
+
+    return top_tri_area + bot_tri_area
 end
