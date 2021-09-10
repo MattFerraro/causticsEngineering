@@ -12,7 +12,7 @@ function squareMesh(width::Int, height::Int)
     nodeArray = Matrix{Point3D}(undef, width, height)
     count = 1
     midpoint = width / 2
-    for y = 1:height, x = 1:width
+    for y in 1:height, x in 1:width
         newPoint = Point3D(x, y, 0, x, y)
         nodeList[count] = newPoint
         nodeArray[x, y] = newPoint
@@ -21,8 +21,8 @@ function squareMesh(width::Int, height::Int)
 
     triangles = Vector{Triangle}(undef, (width - 1) * (height - 1) * 2)
     count = 1
-    for y = 1:(height-1)
-        for x = 1:(width-1)
+    for y = 1:(height - 1)
+        for x = 1:(width - 1)
             # here x and y establish the column of squares we're in
             index_ul = (y - 1) * width + x
             index_ur = index_ul + 1
@@ -104,30 +104,30 @@ end
 """
 $(SIGNATURES)
 
-This function saves the mesh object in stl format.
+This function saves the mesh object in obj format.
 """
 function saveObj!(mesh::Mesh, filename::String; scale=1.0, scalez=1.0, reverse=false, flipxy=false)
     # This function saves the mesh object in stl format
-      open(filename, "w") do io
-          for vertex in mesh.nodes
-              if flipxy
-                  println(io, "v ", vertex.y * scale, " ", vertex.x * scale, " ", vertex.z * scalez)
-              else
-                  println(io, "v ", vertex.x * scale, " ", vertex.y * scale, " ", vertex.z * scalez)
-              end
-          end
+    open(filename, "w") do io
+        for vertex in mesh.nodes
+            if flipxy
+                println(io, "v ", vertex.y * scale, " ", vertex.x * scale, " ", vertex.z * scalez)
+            else
+                println(io, "v ", vertex.x * scale, " ", vertex.y * scale, " ", vertex.z * scalez)
+            end
+        end
   
-          for face in mesh.triangles
-              if reverse
-                  println(io, "f ", face.pt3, " ", face.pt2, " ", face.pt1)
-              else
-                  println(io, "f ", face.pt1, " ", face.pt2, " ", face.pt3)
-              end
-          end
+        for face in mesh.triangles
+            if reverse
+                println(io, "f ", face.pt3, " ", face.pt2, " ", face.pt1)
+            else
+                println(io, "f ", face.pt1, " ", face.pt2, " ", face.pt3)
+            end
+        end
   
-          println(io, "dims ", mesh.width, " ", mesh.height)
-      end
-  end
+        println(io, "dims ", mesh.width, " ", mesh.height)
+    end
+end
 
 
 """
@@ -177,9 +177,9 @@ function ∇(f::Matrix{Float64})
     ∇fᵤ = zeros(Float64, width, height)   # the right edge will be filled with zeros
     ∇fᵥ = zeros(Float64, width, height)   # the buttom edge will be filled with zeros
 
-    for x = 1:width, y = 1:height
-        ∇fᵤ[x, y] = (x == width ? 0 : f[x+1, y] - f[x, y])
-        ∇fᵥ[x, y] = (y == height ? 0 : f[x, y+1] - f[x, y])
+    for x in 1:width, y in 1:height
+        ∇fᵤ[x, y] = (x == width ? 0 : f[x + 1, y] - f[x, y])
+        ∇fᵥ[x, y] = (y == height ? 0 : f[x, y + 1] - f[x, y])
     end
 
     return ∇fᵤ, ∇fᵥ
@@ -192,23 +192,23 @@ $(SIGNATURES)
 function getPixelArea(mesh::Mesh)
     # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
     # The Z coordinate represents the value. brightness is just proportional to area.
-    pixelAreas = Matrix{Float64}(undef, mesh.width - 1, mesh.height - 1)
+    # pixelAreas = Matrix{Float64}(undef, mesh.width - 1, mesh.height - 1)
+    pixelAreas = zeros(mesh.width - 1, mesh.height - 1)
 
-    for x = 1:mesh.width-1, y = 1:mesh.height-1
+    for x in 1:mesh.width - 1, y in 1:mesh.height - 1
         upperLeft = mesh.nodeArray[x, y]
-        upperRight = mesh.nodeArray[x+1, y]
+        upperRight = mesh.nodeArray[x + 1, y]
 
-        lowerLeft = mesh.nodeArray[x, y+1]
-        lowerRight = mesh.nodeArray[x+1, y+1]
+        lowerLeft = mesh.nodeArray[x, y + 1]
+        lowerRight = mesh.nodeArray[x + 1, y + 1]
 
-        #=
+        #= 
         *------*
         |    / |
         |   /  |
         |  /   |
         | /    |
-        *------*
-        =#
+        *------* =#
         pixelAreas[x, y] =
             triangle_area(lowerLeft, upperRight, upperLeft) +
             triangle_area(lowerLeft, lowerRight, upperRight)
@@ -361,7 +361,7 @@ function matrix_to_mesh(matrix::Matrix{Float64})
     w, h = size(matrix)
 
     retval = squareMesh(w, h)
-    for x = 1:w, y = 1:h
+    for x in 1:w, y in 1:h
         index = (y - 1) * retval.width + x
         node = retval.nodes[index]
         node.z = matrix[x, y]
@@ -381,20 +381,20 @@ function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
 
     # For each point in the mesh we need to figure out its velocity
     velocities = Matrix{Point3D}(undef, mesh.width, mesh.height)
-    for x = 1:mesh.width, y = 1:mesh.height
+    for x in 1:mesh.width, y in 1:mesh.height
         # XY coordinates in the mesh ARE XY coordinates in the image. The mesh just needs an extra row and column
         # at the bottom right edge so that the triangles can be closed
 
         if x == mesh.width
             u = 0
         else
-            u = (y == mesh.height ? ∇ϕᵤ[x, y-1] : ∇ϕᵤ[x, y])
+            u = (y == mesh.height ? ∇ϕᵤ[x, y - 1] : ∇ϕᵤ[x, y])
         end
 
         if y == mesh.height
             v = 0
         else
-            v = (x == mesh.width ? ∇ϕᵥ[x-1, y] : ∇ϕᵥ[x, y])
+            v = (x == mesh.width ? ∇ϕᵥ[x - 1, y] : ∇ϕᵥ[x, y])
         end
 
         velocities[x, y] = Point3D(-u, -v, 0, 0, 0)
@@ -436,7 +436,7 @@ function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
 end
 
 
-"""
+    """
 $(SIGNATURES)
 """
 function quantifyLoss!(D, suffix, img)
@@ -446,9 +446,9 @@ function quantifyLoss!(D, suffix, img)
     println("SUM: $(sum(D))")
 
     blue = zeros(size(D))
-    blue[D.>0] = D[D.>0]
+    blue[D .> 0] = D[D .> 0]
     red = zeros(size(D))
-    red[D.<0] = -D[D.<0]
+    red[D .< 0] = -D[D .< 0]
     green = zeros(size(D))
 
     println(size(blue))
@@ -484,11 +484,10 @@ function oneIteration(meshy, img, suffix)
 
     width, height = size(img)
 
-    # ϕ = Matrix{Float64}(undef, width, height)
     ϕ = zeros(width, height)
 
     println("Building Phi")
-    for i = 1:10240/2
+    for i = 1:10000
         max_update = relax!(ϕ, D)
         
         if isnan(max_update)
@@ -506,18 +505,18 @@ function oneIteration(meshy, img, suffix)
         end
     end
 
-    saveObj!(
-        matrix_to_mesh(ϕ * 0.02),
-        "./examples/phi_$(suffix).obj",
-        reverse = false,
-        flipxy = true,
-    )
+    # saveObj!(
+    #     matrix_to_mesh(ϕ * 0.02),
+    #     "./examples/phi_$(suffix).obj",
+    #     reverse=false,
+    #     flipxy=true,
+    # )
     # plotAsQuiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
     marchMesh!(meshy, ϕ)
-    saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy = true)
+# saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy=true)
 end
 
 
@@ -537,17 +536,17 @@ function setHeights!(mesh, heights, heightScale=1.0, heightOffset=10)
 
     # get the side edge
     for y = 1:height
-        mesh.nodeArray[width+1, y].z = mesh.nodeArray[width, y].z
+        mesh.nodeArray[width + 1, y].z = mesh.nodeArray[width, y].z
     end
 
     # get the bottom edge
-    for x = 1:width+1
-        mesh.nodeArray[x, height+1].z = mesh.nodeArray[x, height].z
+    for x = 1:width + 1
+        mesh.nodeArray[x, height + 1].z = mesh.nodeArray[x, height].z
     end
 
 
     # # get the pesky corner!
-    # mesh.nodeArray[width + 1, height + 1].z = mesh.nodeArray[width, height].z
+# mesh.nodeArray[width + 1, height + 1].z = mesh.nodeArray[width, height].z
 end
 
 
@@ -565,7 +564,7 @@ function solidify(inputMesh, offset=100)
     # imagine a 4x4 image. 4 * 2 + 2 * 2 = 12
     numEdgeNodes = width * 2 + (height - 2) * 2
 
-    numTrianglesTop = (width-1)*(height-1) * 2
+    numTrianglesTop = (width - 1) * (height - 1) * 2
     numTrianglesBottom = numTrianglesTop
     numTrianglesEdges = numEdgeNodes * 2
 
@@ -602,7 +601,7 @@ function solidify(inputMesh, offset=100)
         end
     end
 
-    println("We now have $(count-1) valid nodes")
+    println("We now have $(count - 1) valid nodes")
 
     triangles = Vector{Triangle}(undef, totalTriangles)
     # Build the triangles for the bottom surface
@@ -623,10 +622,10 @@ function solidify(inputMesh, offset=100)
         end
     end
 
-    println("We've filled up $(count-1) triangles")
+    println("We've filled up $(count - 1) triangles")
     if count != numTrianglesBottom + 1
         println("Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom + 1)")
-    end
+        end
 
     # Build the triangles for the top surface
     for y = 1:(height - 1)
@@ -645,7 +644,7 @@ function solidify(inputMesh, offset=100)
         end
     end
 
-    println("We've filled up $(count-1) triangles")
+    println("We've filled up $(count - 1) triangles")
 
     # Build the triangles to close the mesh
     x = 1
@@ -656,7 +655,7 @@ function solidify(inputMesh, offset=100)
         ur = lr + totalNodes / 2
         triangles[count] = Triangle(ll, ul, ur)
         count += 1
-        triangles[count] = Triangle(ur, lr, ll)
+    triangles[count] = Triangle(ur, lr, ll)
         count += 1
     end
 
@@ -673,7 +672,7 @@ function solidify(inputMesh, offset=100)
     end
 
     y = 1
-    for x = 2: width
+    for x = 2:width
         ll = (y - 1) * width + x
         ul = ll + totalNodes / 2
         lr = (y - 1) * width + (x - 1)
@@ -685,7 +684,7 @@ function solidify(inputMesh, offset=100)
     end
 
     y = height
-    for x = 2: width
+    for x = 2:width
         ll = (y - 1) * width + x
         ul = ll + totalNodes / 2
         lr = (y - 1) * width + (x - 1)
@@ -696,7 +695,7 @@ function solidify(inputMesh, offset=100)
         count += 1
     end
 
-    Mesh(nodeList, nodeArrayBottom, triangles, width, height)
+Mesh(nodeList, nodeArrayBottom, triangles, width, height)
 end
 
 
@@ -744,21 +743,21 @@ function findSurface(mesh, image, f, imgWidth)
 
     for j = 1:height
         for i = 1:width
-            δx = (Nx[i+1, j] - Nx[i, j])
-            δy = (Ny[i, j+1] - Ny[i, j])
+            δx = (Nx[i + 1, j] - Nx[i, j])
+            δy = (Ny[i, j + 1] - Ny[i, j])
             divergence[i, j] = δx + δy
         end
     end
     println("Have all the divergences")
     println("Divergence sum: $(sum(divergence))")
-    divergence .-= sum(divergence) / (width*height)
+    divergence .-= sum(divergence) / (width * height)
 
     h = zeros(width, height)
     max_update = 0
-    for i = 1:10240/4
+    for i = 1:10000
         max_update = relax!(h, divergence)
 
-        if i % 100 == 0
+        if i % 500 == 0
             println(max_update)
         end
         if max_update < 0.00001
@@ -767,17 +766,17 @@ function findSurface(mesh, image, f, imgWidth)
         end
     end
 
-    println("HEIGHT STATS")
-    h .-= sum(h) / (width * height)
-    println(minimum(h))
-    println(maximum(h))
-    println(sum(h))
-    println("-----------")
+    # println("HEIGHT STATS")
+    # h .-= sum(h) / (width * height)
+    # println(minimum(h))
+    # println(maximum(h))
+    # println(sum(h))
+    # println("-----------")
 
-    # saveObj(matrix_to_mesh(h / 10), "heightmap.obj")
+    # saveObj!(matrix_to_mesh(h * 10), "examples/heightmap.obj")
     h, metersPerPixel
 end
-
+    
 """
 $(SIGNATURES)
 """
@@ -792,7 +791,7 @@ function testSquareMesh!()
     println(mesh.nodes[1])
 
     mesh.nodes[1].y += 12
-    println(mesh.nodeArray[1, 1])
+println(mesh.nodeArray[1, 1])
     println(mesh.nodes[1])
 
 end
@@ -807,7 +806,7 @@ function testSolidify!()
     height = 100
     origMesh = squareMesh(width, height)
 
-    for y = 1:height, x = 1:width
+    for y in 1:height, x in 1:width
         x2 = (x - width / 2) / width
         y2 = (y - height / 2) / height
         value = x2 * x2 + y2 * y2
@@ -825,12 +824,12 @@ $(SIGNATURES)
 """
 function plotAsQuiver(
     g;
-    stride = 4,
-    scale = 300,
-    max_length = 2,
-    flipxy = false,
-    reversey = false,
-    reversex = false,
+    stride=4,
+    scale=300,
+    max_length=2,
+    flipxy=false,
+    reversey=false,
+    reversex=false,
 )
     h, w = size(g)
     xs = Float64[]
@@ -838,13 +837,13 @@ function plotAsQuiver(
     us = Float64[]
     vs = Float64[]
 
-    for x = 1:stride:w, y = 1:stride:h
+    for x in 1:stride:w, y in 1:stride:h
         reversex ? push!(xs, x) : push!(xs, -x)
         reversey ? push!(ys, -y) : push!(ys, y)
 
         p1 = g[y, x]
-        u = (g[y, x+1] - g[y, x]) * scale
-        v = (g[y+1, x] - g[y, x]) * scale
+        u = (g[y, x + 1] - g[y, x]) * scale
+        v = (g[y + 1, x] - g[y, x]) * scale
 
         u = -u
 
@@ -857,8 +856,8 @@ function plotAsQuiver(
     end
 
     q =
-        flipxy ? quiver(ys, xs, quiver = (vs, us), aspect_ratio = :equal) :
-        quiver(xs, ys, quiver = (us, vs), aspect_ratio = :equal)
+        flipxy ? quiver(ys, xs, quiver=(vs, us), aspect_ratio=:equal) :
+        quiver(xs, ys, quiver=(us, vs), aspect_ratio=:equal)
 
     display(q)
     readline()
@@ -868,7 +867,7 @@ end
 """
 $(SIGNATURES)
 """
-function plotVAsQuiver(vx, vy; stride = 4, scale = 300, max_length = 2)
+function plotVAsQuiver(vx, vy; stride=4, scale=300, max_length=2)
     h, w = size(vx)
 
     xs = Float64[]
@@ -876,7 +875,7 @@ function plotVAsQuiver(vx, vy; stride = 4, scale = 300, max_length = 2)
     us = Float64[]
     vs = Float64[]
 
-    for x = 1:stride:w, y = 1:stride:h
+    for x in 1:stride:w, y in 1:stride:h
         push!(xs, x)
         push!(ys, h - y)
 
@@ -889,7 +888,7 @@ function plotVAsQuiver(vx, vy; stride = 4, scale = 300, max_length = 2)
     end
 
     # readline()
-    q = quiver(xs, ys, quiver = (us, vs), aspect_ratio = :equal)
+    q = quiver(xs, ys, quiver=(us, vs), aspect_ratio=:equal)
     display(q)
     readline()
 end
@@ -919,14 +918,13 @@ function engineer_caustics(img)
     oneIteration(meshy, img3, "it1")
     oneIteration(meshy, img3, "it2")
     oneIteration(meshy, img3, "it3")
-
-    # oneIteration(meshy, img3, "it4")
+    oneIteration(meshy, img3, "it4")
     # oneIteration(meshy, img3, "it5")
     # oneIteration(meshy, img3, "it6")
 
-    artifactSize = 0.15  # meters
-
-    h, metersPerPixel = findSurface(meshy, img3, 1.0, artifactSize)
+    artifactSize = 0.1  # meters
+    focalLength = 0.2 # meters
+    h, metersPerPixel = findSurface(meshy, img3, focalLength, artifactSize)
 
     setHeights!(meshy, h, 1.0, 10)
 
@@ -934,8 +932,8 @@ function engineer_caustics(img)
     saveObj!(
         solidMesh,
         "./examples/original_image.obj",
-        scale = 1 / 512 * artifactSize,
-        scalez = 1 / 512.0 * artifactSize,
+        scale=1 / 512 * artifactSize,
+        scalez=1 / 512.0 * artifactSize,
     )
 
     return meshy, img3
