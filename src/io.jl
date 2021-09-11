@@ -38,7 +38,7 @@ The format difinition is sourced from [https://en.wikipedia.org/wiki/STL_(file_f
 
 TO REFACTOR.
 """
-function save_stl!(
+function save_obj!(
     mesh::FaceMesh,
     filename::String;
     scale = 1.0,
@@ -88,9 +88,9 @@ end
 $(SIGNATURES)
 
 """
-function save_stl!(
-    triangle_index::AbstractVector{},
-    vertex_index::AbstractVector{},
+function save_obj!(
+    triangle_index,
+    vertex_index::AbstractMatrix{Float64},
     filename::String;
     scale = 1.0,
     scaleh = 1.0,
@@ -101,25 +101,22 @@ function save_stl!(
     open(filename, "w") do io
         println(io, "solid engineered_caustics")
 
-        for i ∈ 1:length(vertex_index)
+        xs = vertex_index[:, 1]
+        ys = vertex_index[:, 2]
+        zs = vertex_index[:, 3]
+        for i ∈ 1:length(xs)
             if flipxy
-                println(
-                    io,
-                    "v $(vertex_index[2] * scale) $(vertex_index[1] * scale) $(vertex_index[3] * scaleh)",
-                )
+                println(io, "v $(ys[i] * scale) $(xs[i][1] * scale) $(zs[i] * scaleh)")
             else
-                println(
-                    io,
-                    "v $(vertex_index[1] * scale) $(vertex_index[2] * scale) $(vertex_index[3] * scaleh)",
-                )
+                println(io, "v $(xs[i] * scale) $(ys[i][1] * scale) $(zs[i] * scaleh)")
             end
         end
 
-        for i ∈ 1:length(triangle_index)
-            println(
-                io,
-                "f $(triangle_index[i][1]) $(triangle_index[i][2]) $(triangle_index[i][3])",
-            )
+        t1 = triangle_index[1]
+        t2 = triangle_index[2]
+        t3 = triangle_index[3]
+        for i ∈ 1:length(t1)
+            println(io, "f $(t1[i]) $(t2[i]) $(t3[i])")
         end
 
         println(io, "endsolid engineered_caustics")

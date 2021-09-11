@@ -35,3 +35,7 @@ Manifest.toml
 *.tmp
 *.temp
 
+
+
+
+src/debug_script.jl

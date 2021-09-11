@@ -269,13 +269,25 @@ function create_solid(
 )
 
     index_dict = Dict{String,Int64}()
-    count = 0
-    for k ∈ keys(vertex_dict)
-        count += 1
-        index_dict[k] = count
+    index_of_vertex = 0
+    for name ∈ keys(vertex_dict)
+        index_of_vertex += 1
+        index_dict[name] = index_of_vertex
     end
 
-    vertex_index = [(index_dict[k], v[1], v[2], v[3]) for (k, v) ∈ vertex_dict]
+    vertex_index = Vector{Tuple{Float64,Float64,Float64}}(undef, length(vertex_dict))
+    # For each vertex using its name and coordinates
+    for (name, v) ∈ vertex_dict
+        # Determine the index of the vertex
+        i = index_dict[name]
+        x = v[1]
+        y = v[2]
+        z = v[3]
+        vertex_index[i] = (x, y, z)
+    end
+
+    # The connections are listed as a tuple of 3 arrays.
+    # First array contains the first point of a triangle, and so on
     triangle_index = [
         (index_dict[v[1]], index_dict[v[2]], index_dict[v[3]]) for
         v ∈ values(triangle_dict)

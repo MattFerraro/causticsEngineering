@@ -10,18 +10,16 @@ function engineer_caustics(source_image)
     # mesh is the same size as the image with an extra row/column to have coordinates to
     # cover each image corner with a triangle.
     mesh = FaceMesh(height, width)
-    # println("Mesh creation: ")
 
-    # The energy going through the lens is equal to the amount of energy on the caustics
+    # The total energy going through the lens is equal to the amount of energy on the caustics
     total_energy_lens = height * width * 1     # 1 unit of energy per pixel
     total_energy_caustics = sum(imageBW)
     correction_ratio = sum(imageBW) / (width * height)
 
-    # imageBW is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
-    # original image.
+    # imageBW is normalised to the same (sort of) _energy_ as the original image.
     imageBW = imageBW ./ correction_ratio
 
-    # start_max_update has no particular meeting.
+    # start_max_update has no particular meing.
     # It is basically the initial max_update. But then is used to initialise other variables so that
     # not to stop the `while` loop on the first iteration
     start_max_update = 1_000.0
@@ -49,6 +47,10 @@ function engineer_caustics(source_image)
     ϕ, max_update = move_horizontally(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
     mesh.corners.ϕ .= ϕ
     println(" max update = $(max_update)")
+
+    # Move the around a nil average.
+    mean_ϕ = sum(mesh.corners.ϕ) / length(mesh.corners.ϕ)
+    mesh.corners.ϕ = mesh.corners.ϕ .- mean_ϕ
 
     return mesh, imageBW
 end
@@ -174,7 +176,7 @@ function solve_velocity_potential!(mesh, image, suffix)
     # We mention them here only for completeness; for a full discussion see Asynchronous Programming.
     march_mesh!(mesh)
 
-    save_stl!(
+    save_obj!(
         matrix_to_mesh(mesh.corners.ϕ * 0.01),
         "./examples/phi_$(suffix).obj",
         reverse = false,
@@ -194,7 +196,7 @@ function solve_velocity_potential!(mesh, image, suffix)
 
     # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
-    save_stl!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
+    save_obj!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
 
     return max_update
 end

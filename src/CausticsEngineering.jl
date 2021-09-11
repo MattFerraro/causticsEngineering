@@ -42,6 +42,12 @@ export
     create_solid,
     create_solid_as_dict,
 
+    # Plotting
+    plot_as_quiver,
+
+    # I/O
+    save_obj!,
+
     # Main procedures
     main,
     engineer_caustics
