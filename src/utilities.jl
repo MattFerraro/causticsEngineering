@@ -82,7 +82,7 @@ Origin is top left, going right and down .`x` goes horizontal and follows column
 
 # Velocity
 
-Velocity vector along `x` and `y` (velocity along h not necessary).
+Velocity vector along `row` and `col` (velocity along h not used).
 
 Implementation is a struc of arrays. Easier to vectorise.
 
@@ -101,9 +101,6 @@ mutable struct FieldVertex3D
 
     rows_numbers::AbstractMatrix{Float64}
     cols_numbers::AbstractMatrix{Float64}
-
-    # FieldVertex3D(size, mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers) = new(size, mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
-
 end
 
 # Information about each corner surrounding a pixel. Posts&fences warning!!!
@@ -117,12 +114,6 @@ function FieldVertex3D(height, width)
 
     mvr = zeros(Float64, height + 1, width + 1)
     mvc = zeros(Float64, height + 1, width + 1)
-
-    # mr = rows_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    # mc = cols_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    # mϕ = rand(Float64, height, width) ./ 1_000 .- 0.5 / 1_000
-    # mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    # mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
 
     fv = FieldVertex3D((height, width), mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
     reset_border_values!(fv)
@@ -365,27 +356,10 @@ end
 
 
 """
-$(TYPEDEF)
-"""
-struct MeshVertex
-    id::Int64
-    tri::Vertex3D
-end
-
-
-"""
-$(TYPEDEF)
-"""
-struct MeshTriangle
-    tri::Tuple{Int64}
-end
-
-
-"""
 $(SIGNATURES)
 
 A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
-area in the x, y plane. h is ignored.
+area in the r, r plane. h is ignored.
 
 The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
 has been shifted and flexed around.

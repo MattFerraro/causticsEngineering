@@ -112,7 +112,6 @@ function solve_velocity_potential!(mesh, image, suffix)
         new_divergence < 100.0
     )
 
-        # while sum(abs.(mesh.corners.ϕ - mesh_ϕ)) / (height * width) < 100
         iteration_count += 1
         iteration_count % 100 == 0 && println("Converging for intensity: $(max_update)")
 
@@ -183,7 +182,6 @@ function solve_velocity_potential!(mesh, image, suffix)
         flipxy = false,
     )
 
-    # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reverser=false, reversec=false)
     plot_as_quiver(
         mesh,
         stride = 20,
@@ -194,8 +192,6 @@ function solve_velocity_potential!(mesh, image, suffix)
         reversec = false,
     )
 
-    # plot_as_quiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
-    # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
     save_obj!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
 
     return max_update
@@ -261,7 +257,6 @@ function move_horizontally(
 
     println("Convergence horiz. Δ stopped with max_update of $(max_update)")
 
-    # saveObj(matrix_to_mesh(h / 10), "./examples/heightmap.obj")
     return true_H, max_update
 end
 
@@ -287,12 +282,6 @@ In order of how to think about the flow of the program:
 - Velocity toward the centre => divergence of the velocities should be negative. That is ∇²ϕ < 0.
 - The higher ∇ϕ (the actual loss given a particular target caustics), the lower ∇²ϕ (of the current estimated ϕ)
   should be.
-
-In order to reduce the error, the error informs how to change the estimated ϕ.
-
--
-δ > 0 => divergence of ϕ needs to increase
-
 
 """
 function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
@@ -462,8 +451,6 @@ function march_mesh!(mesh::FaceMesh)
 
         """,
     )
-
-    # saveObj(mesh, "gateau.obj")
 end
 
 

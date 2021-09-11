@@ -28,62 +28,6 @@ function convert(::Meshes.SimpleMesh, mesh::FaceMesh)
 end
 
 
-
-"""
-$(SIGNATURES)
-
-This function saves the mesh object in stl format.
-
-The format difinition is sourced from [https://en.wikipedia.org/wiki/STL_(file_format)]().
-
-TO REFACTOR.
-"""
-function save_obj!(
-    mesh::FaceMesh,
-    filename::String;
-    scale = 1.0,
-    scaleh = 1.0,
-    reverse = false,
-    flipxy = false,
-)
-
-    return
-
-    height, width = size(mesh)
-
-    open(filename, "w") do io
-        println(io, "solid engineered_caustics")
-
-        for row ∈ 1:height, col ∈ 1:width
-            # Top triangle
-            top_triangle = top_triangle(mesh, row, col)
-            n = centroid(top_triangle)
-
-            if flipxy
-                println(io, "v $(n.c * scale) $(n.r * scale) $(n.h * scaleh)")
-            else
-                println(io, "v $(n.r * scale) $(n.c * scale) $(n.h * scaleh)")
-            end
-
-            # Bottom triangle
-            bot_triangle = bottom_triangle(mesh, row, col)
-            n = centroid(bot_triangle)
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
-            end
-        end
-
-        # CHECK what dims exactly represents. Number of triangles?
-        println(io, "dims $(2*mesh.width) $(2*mesh.height)")
-
-        println(io, "endsolid engineered_caustics")
-    end
-end
-
-
 """
 $(SIGNATURES)
 
