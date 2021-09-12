@@ -1,11 +1,15 @@
 using Revise, Debugger
 
 using Images
-image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
-
 using CausticsEngineering
-mesh, imageBW = engineer_caustics(image);
 
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
+
+image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
+
+mesh, imageBW = engineer_caustics(image);
 
 # Check a few values to make sure they make sense
 mesh.corners.r
@@ -24,7 +28,7 @@ mean_ϕ = sum(mesh.corners.ϕ) / length(mesh.corners.ϕ)
 plot_as_quiver(
     mesh,
     stride = 20,
-    scale = 1.0,
+    scale = 5.0,
     max_length = 20,
     flipxy = true,
     reverser = false,
@@ -53,6 +57,10 @@ triangle_dict, vertex_dict, triangle_index, vertex_index =
 #     top_distance = Top_Offset,
 #     )
 
+# Area of all the distorted pixels
+am = CausticsEngineering.get_area_corners(mesh)
+maximum(am)
+minimum(am)
 
 # Save as an obj file
 save_obj!(
@@ -67,21 +75,56 @@ save_obj!(
 # Convert to a mesh structure
 using Meshes
 
-# 2D Mesh
-vertex_index2D = [(v[1], v[2]) for v ∈ vertex_index]
-vertices2 = Meshes.Point2.(vertex_index2D)
-cat_mesh2D = Meshes.SimpleMesh(vertices, connections)
+# Zone to plot
+row_min = 100.0
+row_max = 200.0
+col_min = 100.0
+col_max = 200.0
+
+function clip_trangle_index(
+    triangle_index,
+    vertex_index;
+    row_min = 100.0,
+    row_max = 200.0,
+    col_min = 100.0,
+    col_max = 200.0,
+)
+
+    function is_in_zone(t)::Bool
+        p1, p2, p3 = t
+        v1_r, v1_c = vertex_index[p1]
+        v2_r, v2_c = vertex_index[p2]
+        v3_r, v3_c = vertex_index[p3]
+
+        return row_min <= v1_r <= row_max &&
+               col_min <= v1_c <= col_max &&
+               row_min <= v2_r <= row_max &&
+               col_min <= v2_c <= col_max &&
+               row_min <= v3_r <= row_max &&
+               col_min <= v3_c <= col_max
+    end
+
+    return [t for t ∈ triangle_index if is_in_zone(t)]
+end
+
+# Select relevant triangles
+triangle_index3D = clip_trangle_index(triangle_index, vertex_index)
+connections = Meshes.connect.(triangle_index3D)
 
 # 3D Mesh
-vertices = Meshes.Point3.(vertex_index)
-connections = Meshes.connect.(triangle_index)
-cat_mesh = Meshes.SimpleMesh(vertices, connections)
+vertices3D = Meshes.Point3.(vertex_index)
+cat_mesh3D = Meshes.SimpleMesh(vertices3D, connections)
+
+# 2D Mesh
+vertex_index2D = [(v[1], v[2]) for v ∈ vertex_index]
+vertices2D = Meshes.Point2.(vertex_index2D)
+cat_mesh2D = Meshes.SimpleMesh(vertices2D, connections)
 
 
 # NOT WORKING...
 using MeshViz
 
 # Explicitly import the preferred backend (depending on use case)
-import CairoMakie
-MeshViz.viz(cat_mesh)
+import GLMakie
+MeshViz.viz(cat_mesh3D)
 MeshViz.viz(cat_mesh2D)

@@ -39,3 +39,4 @@ Manifest.toml
 
 
 src/debug_script.jl
+examples/personal

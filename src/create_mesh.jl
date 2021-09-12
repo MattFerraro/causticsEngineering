@@ -28,9 +28,9 @@ function engineer_caustics(source_image)
     iteration_count = 0
 
     while (
-        1e-6 < abs(max_update) < start_max_update + 1 &&
-        abs((max_update - old_max_update) / old_max_update) > 0.01 &&
-        iteration_count < 1_024
+        1e-8 < abs(max_update) < 10 * start_max_update &&
+        abs((max_update - old_max_update) / old_max_update) > 1e-6 &&
+        iteration_count < 100_000
     )
         iteration_count += 1
 
@@ -107,8 +107,8 @@ function solve_velocity_potential!(mesh, image, suffix)
     new_divergence = 0.0
 
     while (
-        1e-6 < abs(max_update) < start_max_update + 1 &&
-        abs((max_update - old_max_update) / old_max_update) > 0.01 &&
+        1e-9 < abs(max_update) < 10 * start_max_update &&
+        abs((max_update - old_max_update) / old_max_update) > 1e-6 &&
         new_divergence < 100.0
     )
 
@@ -175,13 +175,6 @@ function solve_velocity_potential!(mesh, image, suffix)
     # We mention them here only for completeness; for a full discussion see Asynchronous Programming.
     march_mesh!(mesh)
 
-    save_obj!(
-        matrix_to_mesh(mesh.corners.ϕ * 0.01),
-        "./examples/phi_$(suffix).obj",
-        reverse = false,
-        flipxy = false,
-    )
-
     plot_as_quiver(
         mesh,
         stride = 20,
@@ -191,8 +184,6 @@ function solve_velocity_potential!(mesh, image, suffix)
         reverser = false,
         reversec = false,
     )
-
-    save_obj!(mesh, "./examples/mesh_$(suffix).obj", flipxy = true)
 
     return max_update
 end
@@ -345,7 +336,7 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
     maximum_δ = maximum(abs.(δ))
 
     # We limit the changes of the potential to a maximum
-    max_correction_ratio = 10.0
+    max_correction_ratio = 5.0
 
     if 1.94 / 4.0 * maximum_δ < max_correction_ratio
         correction_ratio = 1.94 / 4.0
@@ -382,9 +373,6 @@ function march_mesh!(mesh::FaceMesh)
     height, width = size(mesh.corners.ϕ)
 
     ∇ϕᵤ, ∇ϕᵥ = ∇(mesh.corners.ϕ)
-    # println("Min/Max of values of ϕ: $(minimum(ϕ)) / $(maximum(ϕ))")
-    # println("Sum of values of ∇ϕᵤ:   $( sum(∇ϕᵤ) )")
-    # println("Sum of values of ∇ϕᵥ:   $( sum(∇ϕᵥ) )")
 
 
     # For each point in the mesh we need to figure out its velocity
@@ -392,7 +380,6 @@ function march_mesh!(mesh::FaceMesh)
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
     # Warning: The indices are necessary because corner and ∇ϕ are of different sizes
-    # CHECK SIGNS!
     mesh.corners.vr .= -∇ϕᵤ
     mesh.corners.vc .= -∇ϕᵥ
 
@@ -422,8 +409,6 @@ function march_mesh!(mesh::FaceMesh)
 
         if !isempty(list_maximum_t)
             min_positive_t = minimum(list_maximum_t)
-
-            # @assert all(typeof.(t1) .== Float64) && all(typeof.(t2) .== Float64) "March mesh: Maximum times are not numerical at $(row), $(col)"
 
             max_shift = max(abs(∇ϕᵤ[row, col]), abs(∇ϕᵥ[row, col]))
 

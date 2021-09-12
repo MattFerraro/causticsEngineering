@@ -122,22 +122,15 @@ $(SIGNATURES)
 """
 function plot_scalar_field!(field, filename, img)
     blue = zeros(size(field))
-    blue[field.>0] = field[field.>0]
     red = zeros(size(field))
-    red[field.<0] = -field[field.<0]
     green = zeros(size(field))
+
+    blue[field.>0] = field[field.>0]
+    red[field.<0] = -field[field.<0]
 
     rgbImg = RGB.(red, green, blue)'
     save("./examples/$(filename).png", map(clamp01nan, rgbImg))
-
-    # println("Saving output image:")
-    # println(typeof(img))
-    # E = Gray.(D)
-    # println(typeof(E))
-    # outputImg = img - E
-    # save("./examples/actual_$(suffix).png", outputImg)
 end
-
 
 
 """
@@ -148,10 +141,11 @@ function plot_scalar_field(scalar_field, suffix, img)
     normalised_D_min = scalar_field ./ minimum(scalar_field)
 
     blue = zeros(size(scalar_field))
-    blue[scalar_field.>0] = normalised_D_max[scalar_field.>0]
     red = zeros(size(scalar_field))
-    red[scalar_field.<0] = -normalised_D_min[scalar_field.<0]
     green = zeros(size(scalar_field))
+
+    blue[scalar_field.>0] = normalised_D_max[scalar_field.>0]
+    red[scalar_field.<0] = -normalised_D_min[scalar_field.<0]
 
     rgbImg = RGB.(red, green, blue)'
     save("./examples/$(suffix)_loss.png", map(clamp01nan, rgbImg))
