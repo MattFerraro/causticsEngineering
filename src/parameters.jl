@@ -19,14 +19,14 @@ const Bottom_Offset = 0.02 # 2 centimeters
 ## Optics
 const Focal_Length = 1.0  # meters
 
-const Caustics_Side = 0.1 # m
-const Caustics_Height = Caustics_Side
-
+const Caustics_Long_Side = 0.20 # m
+global Caustics_Height = Caustics_Long_Side
+global Caustics_Width = Caustics_Long_Side
 
 # Caustics picture
-const N_Pixel_Side = 512
-const N_Pixel_Height = N_Pixel_Side
-const N_Pixel_Width = N_Pixel_Side
+global N_Pixel_Side = 512
+global N_Pixel_Height = N_Pixel_Side
+global N_Pixel_Width = N_Pixel_Side
 
 global Meters_Per_Pixel = Caustics_Height / N_Pixel_Height
 

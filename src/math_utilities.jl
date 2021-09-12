@@ -40,7 +40,7 @@ function laplacian(ϕ::AbstractMatrix{Float64})
     # Convolution
     ∇²ϕ = zeros(Float64, height, width)
     for row ∈ 1:height, col ∈ 1:width
-        ∇²ϕ[row, height] = sum(padded_ϕ[row:row+2, col:col+2] .* kernel[1:3, 1:3])
+        ∇²ϕ[row, col] = sum(padded_ϕ[row:row+2, col:col+2] .* kernel[1:3, 1:3])
     end
 
     return ∇²ϕ

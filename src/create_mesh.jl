@@ -1,3 +1,4 @@
+
 """
 $(SIGNATURES)
 """
@@ -6,6 +7,16 @@ function engineer_caustics(source_image)
 
     height, width = size(imageBW)
     println("Image size: $((height, width))")
+
+    # Set some global size parameters
+    global N_Pixel_Height = height
+    global N_Pixel_Width = width
+
+    global Caustics_Height = Caustics_Long_Side
+    global Caustics_Width = Caustics_Height * N_Pixel_Width / N_Pixel_Height
+
+    global Meters_Per_Pixel = Caustics_Height / N_Pixel_Height
+
 
     # mesh is the same size as the image with an extra row/column to have coordinates to
     # cover each image corner with a triangle.
@@ -28,9 +39,9 @@ function engineer_caustics(source_image)
     iteration_count = 0
 
     while (
-        1e-8 < abs(max_update) < 10 * start_max_update &&
-        abs((max_update - old_max_update) / old_max_update) > 1e-6 &&
-        iteration_count < 100_000
+        abs(max_update) > 1e-4 &&
+        abs((max_update - old_max_update) / old_max_update) > 1e-4 &&
+        iteration_count < 10_000
     )
         iteration_count += 1
 
@@ -44,9 +55,10 @@ function engineer_caustics(source_image)
     end
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
-    ϕ, max_update = move_horizontally(mesh, imageBW; f = 1.0, picture_width = Caustics_Side)
+
+    ϕ, max_update = move_horizontally(mesh, imageBW; f = 1.0)
     mesh.corners.ϕ .= ϕ
-    println(" max update = $(max_update)")
+    println("\tmax update = $(max_update)")
 
     # Move the around a nil average.
     mean_ϕ = sum(mesh.corners.ϕ) / length(mesh.corners.ϕ)
@@ -104,12 +116,12 @@ function solve_velocity_potential!(mesh, image, suffix)
     max_update = start_max_update
     old_max_update = 2 * start_max_update
     iteration_count = 0
-    new_divergence = 0.0
+    new_divergence = Inf64
 
     while (
-        1e-9 < abs(max_update) < 10 * start_max_update &&
-        abs((max_update - old_max_update) / old_max_update) > 1e-6 &&
-        new_divergence < 100.0
+        abs(max_update) > 1e-4 &&
+        abs((max_update - old_max_update) / old_max_update) > 1e-4 &&
+        new_divergence >= 0.0
     )
 
         iteration_count += 1
@@ -144,10 +156,13 @@ function solve_velocity_potential!(mesh, image, suffix)
                     """
         new_divergence = maximum(
             abs.(
-                mesh.corners.ϕ[begin+1:end, begin:end-1] .-
-                mesh_ϕ[begin:end-1, begin:end-1] .+
-                mesh.corners.ϕ[begin:end-1, begin+1:end] .-
-                mesh_ϕ[begin:end-1, begin:end-1],
+                (
+                    mesh.corners.ϕ[begin+1:end, begin:end-1] .-
+                    mesh_ϕ[begin:end-1, begin:end-1]
+                ) .+ (
+                    mesh.corners.ϕ[begin:end-1, begin+1:end] .-
+                    mesh_ϕ[begin:end-1, begin:end-1]
+                ),
             ),
         )
     end
@@ -177,10 +192,10 @@ function solve_velocity_potential!(mesh, image, suffix)
 
     plot_as_quiver(
         mesh,
-        stride = 20,
+        n_steps = 20,
         scale = 1.0,
-        max_length = 200,
-        flipxy = true,
+        max_length = height / 20,
+        flipxy = false,
         reverser = false,
         reversec = false,
     )
@@ -192,12 +207,7 @@ end
 """
 $(SIGNATURES)
 """
-function move_horizontally(
-    mesh::FaceMesh,
-    image;
-    f = Focal_Length,
-    picture_width = Caustics_Side,
-)
+function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
 
     # height indexes rows, width indexes columns
     height, width = size(mesh)
@@ -205,6 +215,7 @@ function move_horizontally(
     # Coordinates difference
     # Coordinates on the caustics = simple rectangular values in corners.
     # Coordinates on the lens face comes from corner field.
+    # d_row/d_col are _POSTS-SIZED_
     d_row = mesh.corners.rows_numbers - mesh.corners.r
     d_col = mesh.corners.cols_numbers - mesh.corners.c
 
@@ -215,22 +226,28 @@ function move_horizontally(
     # H is the initial distance from the surface of the carved face to the projection screen.
     # H is constant and does not account for the change in heights due to carving.
     # Note: Higher location means closer to the caustics => negative sign
+    # true_H is _POSTS_SIZED_
     true_H = zeros(Float64, size(mesh.corners.ϕ))
     @. true_H[:] = -mesh.corners.ϕ[:] + H
 
     # Normals.
+    # N_row/N_col are _POSTS_SIZED_
     N_row = zeros(Float64, size(true_H))
     N_col = zeros(Float64, size(true_H))
-    @. N_row[:] = tan(atan(d_row[:] / true_H[:]) / (n₁ - n₂))
-    @. N_col[:] = tan(atan(d_col[:] / true_H[:]) / (n₁ - n₂))
+    @. N_row[1:end, 1:end] =
+        tan(atan(d_row[1:end, 1:end] / true_H[1:end, 1:end]) / (n₁ - n₂))
+    @. N_col[1:end, 1:end] =
+        tan(atan(d_col[1:end, 1:end] / true_H[1:end, 1:end]) / (n₁ - n₂))
 
     # We need to find the divergence of the Vector field described by Nx and Ny
+    # div_row/div_col are _FENCES_SIZED_
     div_row = zeros(Float64, width, height)
     div_col = zeros(Float64, width, height)
     @. div_row[1:end, 1:end] = N_row[2:end, 1:end-1] - N_row[1:end-1, 1:end-1]
     @. div_col[1:end, 1:end] = N_col[1:end-1, 2:end] - N_col[1:end-1, 1:end-1]
 
     # divergence_direction = zeros(Float64, size(div_row))
+    # divergence_direction is _FENCES_SIZED_
     divergence_direction = div_row + div_col
     @assert average_absolute(divergence_direction) """
 
@@ -239,7 +256,6 @@ function move_horizontally(
             """
 
     true_H, max_update = propagate_poisson(true_H, -divergence_direction)
-
     @assert average_absolute(true_H) """
 
         ALERT: horiz. Δ corner_heights is too large
@@ -260,8 +276,8 @@ There is a hardcoded assumption of Neumann boundary conditions -- that the deriv
 boundary must be zero in all cases. See:
 https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
 
-- ϕ is the potential to be solved subject to the Poisson equation and is the same size as the corners (posts)
-- target is ∇ϕ and is of the size of the pixels (fences)
+- ϕ is the potential to be solved subject to the Poisson equation and is the same size as the corners (_POSTS_SIZED_)
+- target is ∇ϕ and is of the size in pixels (_FENCES_SIZED_)
 
 In order of how to think about the flow of the program:
 
@@ -412,8 +428,9 @@ function march_mesh!(mesh::FaceMesh)
 
             max_shift = max(abs(∇ϕᵤ[row, col]), abs(∇ϕᵥ[row, col]))
 
-            # No shift more than 20 pixels
-            max_pixel_move = 20.0
+            # No shift more than 100 pixels
+            max_pixel_move = 10.0
+
             δ = min(min_positive_t / 2.0, max_pixel_move / max_shift)
             mesh.corners.r[row, col] =
                 clamp(mesh.corners.r[row, col] + δ * ∇ϕᵤ[row, col], 1, height - 1)
