@@ -26,10 +26,10 @@ function engineer_caustics(source_image)
     # The total energy going through the lens is equal to the amount of energy on the caustics
     total_energy_lens = height * width * 1     # 1 unit of energy per pixel
     total_energy_caustics = sum(imageBW)
-    correction_ratio = sum(imageBW) / (width * height)
+    correction_ratio = average(imageBW)
 
     # imageBW is normalised to the same (sort of) _energy_ as the original image.
-    imageBW = imageBW ./ correction_ratio
+    imageBW = imageBW ./ total_energy_caustics
 
     # start_max_update has no particular meing.
     # It is basically the initial max_update. But then is used to initialise other variables so that
@@ -89,7 +89,7 @@ function solve_velocity_potential!(mesh, image, prefix)
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
 
     area_distorted_corners = get_area_corners(mesh)
-    @assert average_absolute(area_distorted_corners) """
+    @assert test_average_absolute(area_distorted_corners) """
 
            solve_velocity_potential: area_distorted_corners values seem too large
                $(maximum(area_distorted_corners)) / $(minimum(area_distorted_corners))
@@ -98,12 +98,26 @@ function solve_velocity_potential!(mesh, image, prefix)
 
     # Positive error => the triangle needs to shrink (less light)
     error_luminosity = Float64.(area_distorted_corners - image)
-    @assert average_absolute(error_luminosity) """
+    @assert test_average_absolute(error_luminosity) """
 
             solve_velocity_potential: error_luminosity values seem too large
                 max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
 
                 """
+
+    @assert 1 - 1e-2 < sum(area_distorted_corners) < 1 + 1 + 1e-2 """
+
+              solve_velocity_potential: area_distorted_corners has more than 1% difference compared to 1.0
+              Total luminosity through lens: $(sum(area_distorted_corners))
+              Total luminosity caustics: $(sum(image))
+              Total luminosity error: $(sum(error_luminosity))
+              Maximum error: $(maximum(error_luminosity))")
+              Minimum error: $(minimum(error_luminosity))")
+              Iteration prefix: $(prefix)
+
+              """
+
+
 
     # Save the loss image as a png
     println("Loss:")
@@ -155,7 +169,7 @@ function solve_velocity_potential!(mesh, image, prefix)
         ϕ, max_update = propagate_poisson(mesh.corners.ϕ, error_luminosity)
         mesh.corners.ϕ[:, :] .= ϕ[:, :]
 
-        @assert average_absolute(mesh.corners.ϕ) """
+        @assert test_average_absolute(mesh.corners.ϕ) """
 
                 solve_velocity_potential: ϕ values seem too large
                     iteration count = $(iteration_count)
@@ -190,8 +204,7 @@ function solve_velocity_potential!(mesh, image, prefix)
         """
     Convergence stopped at step $(iteration_count) with
         max_update = $(max_update)
-        max/min area_distorted_corners = $(maximum(area_distorted_corners)) / $(minimum(area_distorted_corners))
-        max error_luminosity = $(maximum(abs.(error_luminosity)))
+        max / min error_luminosity = $(maximum(abs.(error_luminosity))) / $(minimum(abs.(error_luminosity)))
         Average mesh changes on ϕ = $(sum(abs.(mesh.corners.ϕ - mesh_ϕ)) / (height * width))
         max ϕ divergence = $(maximum(abs.(mesh.corners.ϕ[begin+1:end, begin:end-1] .- mesh_ϕ[begin:end-1, begin:end-1] .+
         mesh.corners.ϕ[begin:end-1, begin+1:end] .- mesh_ϕ[begin:end-1, begin:end-1])))
@@ -255,7 +268,7 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
     # divergence_direction = zeros(Float64, size(div_row))
     # divergence_direction is _FENCES_SIZED_
     divergence_direction = div_row + div_col
-    @assert average_absolute(divergence_direction) """
+    @assert test_average_absolute(divergence_direction) """
 
             ALERT: horiz. Δ divergence_direction seem too large
             max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))
@@ -263,7 +276,7 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
 
     true_H, max_update =
         propagate_poisson(true_H, -divergence_direction; clamp_correction = false)
-    @assert average_absolute(true_H) """
+    @assert test_average_absolute(true_H) """
 
         ALERT: horiz. Δ corner_heights is too large
         max/min corner_heights = $(maximum(true_H)) / $(minimum(true_H))
@@ -306,7 +319,7 @@ function propagate_poisson(
 
     # Ensure that border conditions are as they should
     fill_borders!(∇²ϕ, 0.0)
-    @assert average_absolute(ϕ) """
+    @assert test_average_absolute(ϕ) """
 
         Relaxation: ϕ values seem too large
             max/min ∇ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
@@ -314,7 +327,7 @@ function propagate_poisson(
 
             """
 
-    @assert average_absolute(∇²ϕ) """
+    @assert test_average_absolute(∇²ϕ) """
 
         Relaxation: ∇²ϕ values seem too large
             max/min ∇²ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
@@ -351,7 +364,7 @@ function propagate_poisson(
     # High intensity loss ∇²ϕ means that the triangles are too bright, too large.
     # This has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
     δ = Lϕ - ∇²ϕ
-    @assert average_absolute(δ) """
+    @assert test_average_absolute(δ) """
 
         Relaxation: difference between intensity loss and estimated Laplacian seem too large
             max/min δ = $(maximum(δ)) / $(minimum(δ))
@@ -428,14 +441,9 @@ function march_mesh!(mesh::FaceMesh)
 
     # Basically infinity time to shrink a triangle to nothing.
     min_positive_t = Inf
-    list_min_pos_t = zeros(Float64, (height - 2) * (width - 2))
-
-    t1 = zeros(Float64, size(mesh))
-    t2 = zeros(Float64, size(mesh))
 
     mesh_r = copy(mesh.corners.r)
     mesh_c = copy(mesh.corners.c)
-    mesh_ϕ = copy(mesh.corners.ϕ)
 
     # Get the time, at that velocity, for the area of the triangle to be nil.
     # We are only interested by positive values to only move in the direction of the gradient
@@ -478,6 +486,14 @@ function march_mesh!(mesh::FaceMesh)
 
         """,
     )
+
+    @assert 1 - 1e-4 < get_area_corners(mesh) < 1 + 1 + 1e-4 """
+
+          march_meshl: area_distorted_corners is too difference from 1.0
+              Total energy area: $(area_distorted_corners)
+
+              """
+    return
 end
 
 

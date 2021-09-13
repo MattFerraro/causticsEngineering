@@ -1,7 +1,18 @@
 """
 $(SIGNATURES)
 """
-average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1e10
+average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m))
+
+"""
+$(SIGNATURES)
+"""
+average(m::AbstractMatrix) = (sum(m) / length(m))
+
+
+"""
+$(SIGNATURES)
+"""
+test_average_absolute(m::AbstractMatrix) = (average_absolute(m)) < 1e10
 
 
 """

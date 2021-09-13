@@ -4,16 +4,24 @@ using Images
 using CausticsEngineering
 
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+
+image = Images.load("./examples/salvador_dali_1.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/salvador_dali_2.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/statue_of_liberty_2.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
-image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 
 using Plots;
 gr();
 mesh, imageBW = engineer_caustics(image);
+
+
+imageBW = Float64.(Gray.(image));
+total_energy_caustics = sum(imageBW)
+imageBW = imageBW ./ total_energy_caustics;
+
 
 # Check a few values to make sure they make sense
 mesh.corners.r

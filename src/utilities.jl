@@ -45,10 +45,9 @@ function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
     c = dist(v3, v1)
     s = (a + b + c) / 2.0
 
-    surface = max(s * (s - a) * (s - b) * (s - c), 1 / 100.0)
-    @assert surface >= 0.0 "Negative surface for $(v1),  $(v2),  $(v3)"
-
-    return sqrt(surface)
+    # surface_sq = (a + b + c) * (- a + b + c) * (a - b + c) * (a + b - c) / 16.0
+    surface_sq = s * (s - a) * (s - b) * (s - c)
+    return surface_sq <= 1e-100 ? 1e-100 : sqrt(surface_sq)
 end
 
 

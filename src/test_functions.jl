@@ -1,3 +1,5 @@
+using Test
+
 """
 $(SIGNATURES)
 
@@ -40,3 +42,60 @@ function testSolidify!()
     solidMesh = solidify(origMesh, 0)
     save_stl!(solidMesh, "./examples/testSolidify2.obj")
 end
+
+
+
+function testAreaTriangle(x1, y1, x2, y2, x3, y3)
+    a = sqrt((x2 - x1)^2 + (y2 - y1)^2)
+    b = sqrt((x3 - x2)^2 + (y3 - y2)^2)
+    c = sqrt((x1 - x3)^2 + (y1 - y3)^2)
+    s = (a + b + c) / 2.0
+
+    surface_sq = (a + b + c) * (-a + b + c) * (a - b + c) * (a + b - c) / 16.0
+    return surface_sq <= 1e-100 ? 1e-100 : surface_sq
+end
+
+function doTestAreaTriangle(N = 10_000)
+    X1 = 10_000 .* rand(N)
+    Y1 = 10_000 .* rand(N)
+    X2 = 10_000 .* rand(N)
+    Y2 = 10_000 .* rand(N)
+    X3 = 10_000 .* rand(N)
+    Y3 = 10_000 .* rand(N)
+
+    for x1 ∈ X1, y1 ∈ Y1, x2 ∈ X2, y2 ∈ Y2, x3 ∈ X3, y3 ∈ Y3
+
+        _ = testAreaTriangle(x1, y1, x2, y2, x3, y3) > 0.0
+    end
+end
+
+@testset "triangle area" begin
+    for x1 ∈ 10_000 .* rand(10_000),
+        y1 ∈ 10_000 .* rand(10_000),
+        x2 ∈ 10_000 .* rand(10_000),
+        y2 ∈ 10_000 .* rand(10_000),
+        x3 ∈ 10_000 .* rand(10_000),
+        y3 ∈ 10_000 .* rand(10_000)
+
+        @test testAreaTriangle(x1, y1, x2, y2, x3, y3) > 0.0
+    end
+end
+
+
+
+v1 = [7250.768146661309, 4849.994680605491]
+v2 = [1725.2665442814496, 8169.783790398901]
+v3 = [6560.1725812433, 5264.912964907599]
+
+a = sqrt(sum((v2 - v1) .^ 2))
+b = sqrt(sum((v3 - v2) .^ 2))
+c = sqrt(sum((v1 - v3) .^ 2))
+s = (a + b + c) / 2.0
+
+s * (s - a) * (s - b) * (s - c)
+(a + b + c) * (-a + b + c) * (a - b + c) * (a + b - c) / 16.0
+
+b + c
+a
+
+10^8 * (b + c - a)
