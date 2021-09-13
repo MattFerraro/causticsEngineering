@@ -8,31 +8,29 @@ image = Images.load("./examples/personal/caricature.jpg"); # Check current worki
 image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
 
+using Plots;
+gr();
 mesh, imageBW = engineer_caustics(image);
 
 # Check a few values to make sure they make sense
 mesh.corners.r
+mesh.corners.vr
 minimum(mesh.corners.vr)
 maximum(mesh.corners.vr)
 
 mesh.corners.c
+mesh.corners.vc
 minimum(mesh.corners.vc)
 maximum(mesh.corners.vc)
 
+mesh.corners.ϕ
 minimum(mesh.corners.ϕ)
 maximum(mesh.corners.ϕ)
 mean_ϕ = sum(mesh.corners.ϕ) / length(mesh.corners.ϕ)
 
 # Plot the last vector field
-plot_as_quiver(
-    mesh,
-    stride = 20,
-    scale = 5.0,
-    max_length = 20,
-    flipxy = true,
-    reverser = false,
-    reversec = false,
-)
+p = plot_as_quiver(mesh, n_steps = 60, scale = 5.0, max_length = 20)
+
 
 
 # Generate dictionaries and arrays containing the vertices and triangles.

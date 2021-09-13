@@ -130,6 +130,7 @@ function reset_border_values!(corners::FieldVertex3D)
     # Reset the border at the fixed values fixed coordinates.
     corners.r[1, :] .= corners.rows_numbers[1, :]
     corners.r[end, :] .= corners.rows_numbers[end, :]
+
     corners.r[:, 1] .= corners.rows_numbers[:, 1]
     corners.r[:, end] .= corners.rows_numbers[:, end]
 

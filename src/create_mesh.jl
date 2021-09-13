@@ -1,6 +1,7 @@
 
 """
 $(SIGNATURES)
+
 """
 function engineer_caustics(source_image)
     imageBW = Float64.(Gray.(source_image))
@@ -39,8 +40,8 @@ function engineer_caustics(source_image)
     iteration_count = 0
 
     while (
-        abs(max_update) > 1e-4 &&
-        abs((max_update - old_max_update) / old_max_update) > 1e-4 &&
+        abs(max_update) > 1e-2 &&
+        abs((max_update - old_max_update) / old_max_update) > 0.0 &&
         iteration_count < 10_000
     )
         iteration_count += 1
@@ -58,7 +59,7 @@ function engineer_caustics(source_image)
 
     ϕ, max_update = move_horizontally(mesh, imageBW; f = 1.0)
     mesh.corners.ϕ .= ϕ
-    println("\tmax update = $(max_update)")
+    println("\t Horizontal max update = $(max_update)")
 
     # Move the around a nil average.
     mean_ϕ = sum(mesh.corners.ϕ) / length(mesh.corners.ϕ)
@@ -75,7 +76,7 @@ $(SIGNATURES)
 ϕ is the _velocity potential_. The velocity represents the direction towards which the mesh vertices should move.
 Zones of high luminosity should be covered with more triangles and should attract more vertices.
 """
-function solve_velocity_potential!(mesh, image, suffix)
+function solve_velocity_potential!(mesh, image, prefix)
     # Remember mesh is (will be) `grid_definition x grid_definition` just like the image
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
 
@@ -100,7 +101,7 @@ function solve_velocity_potential!(mesh, image, suffix)
     println("Loss:")
     println("\tMinimum loss: $(minimum(error_luminosity))")
     println("\tMaximum loss: $(maximum(error_luminosity))")
-    plot_scalar_field!(error_luminosity, suffix * "_loss", image)
+    save_plot_scalar_field!(error_luminosity, prefix * "_loss", image)
 
     # For the purpose of Poisson, we need to divergence to increase towards the inside: negative divergence for high luminosity
     # error_luminosity = -error_luminosity
@@ -116,12 +117,13 @@ function solve_velocity_potential!(mesh, image, suffix)
     max_update = start_max_update
     old_max_update = 2 * start_max_update
     iteration_count = 0
-    new_divergence = Inf64
+    new_divergence_max = 1_000.0
+    new_divergence_mean = 1_000.0
 
     while (
-        abs(max_update) > 1e-4 &&
-        abs((max_update - old_max_update) / old_max_update) > 1e-4 &&
-        new_divergence >= 0.0
+        abs(max_update) > 0.0 &&
+        abs((max_update - old_max_update) / old_max_update) >= 0.01 &&
+        new_divergence_max >= 0.0
     )
 
         iteration_count += 1
@@ -135,7 +137,8 @@ function solve_velocity_potential!(mesh, image, suffix)
         solve_velocity_potential:
             max/min mesh.corners.ϕ = $(maximum(mesh.corners.ϕ)) / $(minimum(mesh.corners.ϕ))
             iteration count = $(iteration_count),       max_update = $(max_update)
-            new maximum divergence = $(new_divergence)
+            new mean divergence = $(new_divergence_mean)
+            new maximum divergence = $(new_divergence_max)
         """,
         )
 
@@ -154,7 +157,7 @@ function solve_velocity_potential!(mesh, image, suffix)
                     max_update = $(max_update)
 
                     """
-        new_divergence = maximum(
+        new_divergence =
             abs.(
                 (
                     mesh.corners.ϕ[begin+1:end, begin:end-1] .-
@@ -163,8 +166,11 @@ function solve_velocity_potential!(mesh, image, suffix)
                     mesh.corners.ϕ[begin:end-1, begin+1:end] .-
                     mesh_ϕ[begin:end-1, begin:end-1]
                 ),
-            ),
-        )
+            )
+
+        new_divergence_max = maximum(new_divergence)
+        new_divergence_mean = sum(new_divergence) / length(new_divergence)
+
     end
 
 
@@ -190,15 +196,7 @@ function solve_velocity_potential!(mesh, image, suffix)
     # We mention them here only for completeness; for a full discussion see Asynchronous Programming.
     march_mesh!(mesh)
 
-    plot_as_quiver(
-        mesh,
-        n_steps = 20,
-        scale = 1.0,
-        max_length = height / 20,
-        flipxy = false,
-        reverser = false,
-        reversec = false,
-    )
+    plot_as_quiver(mesh, n_steps = 30, scale = 1.0, max_length = height / 20)
 
     return max_update
 end
@@ -255,7 +253,8 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
             max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))
             """
 
-    true_H, max_update = propagate_poisson(true_H, -divergence_direction)
+    true_H, max_update =
+        propagate_poisson(true_H, -divergence_direction; clamp_correction = false)
     @assert average_absolute(true_H) """
 
         ALERT: horiz. Δ corner_heights is too large
@@ -291,7 +290,11 @@ In order of how to think about the flow of the program:
   should be.
 
 """
-function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
+function propagate_poisson(
+    ϕ::Matrix{Float64},
+    ∇²ϕ::Matrix{Float64};
+    clamp_correction = true,
+)
 
     # Ensure that border conditions are as they should
     fill_borders!(∇²ϕ, 0.0)
@@ -326,13 +329,13 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
     # Those values are all of ϕ's size and represent the  second order approximation of the
     # Laplacian of ϕ.
     Lϕ = laplacian(ϕ)
-    @assert average_absolute(Lϕ) """
+    # @assert average_absolute(Lϕ) """
 
-        Relaxation: Laplacian of ϕ a seem too large
-            max/min target Lϕ = $(maximum(Lϕ)) / $(minimum(Lϕ))
-            max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
+    #     Relaxation: Laplacian of ϕ a seem too large
+    #         max/min target Lϕ = $(maximum(Lϕ)) / $(minimum(Lϕ))
+    #         max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
 
-            """
+    #         """
 
     # δ is the difference between the divergence of the intensity loss (in the case of the velocity potential)
     # and  the current one for the current field ϕ (divergence of its gradient).
@@ -349,15 +352,28 @@ function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
 
             """
 
-    maximum_δ = maximum(abs.(δ))
+    # Default correction ratio to adjust δ is 1.94/ 4.0
+    correction_ratio = 1.94 / 4.0
 
-    # We limit the changes of the potential to a maximum
-    max_correction_ratio = 5.0
+    # Calculate the average δ that will be used to limit average changes to 5 pixels
+    if clamp_correction
+        abs_δ = abs.(δ)
+        maximum_δ = maximum(abs_δ)
+        μ_δ = sum(abs_δ) / length(abs_δ)
 
-    if 1.94 / 4.0 * maximum_δ < max_correction_ratio
-        correction_ratio = 1.94 / 4.0
-    else
-        correction_ratio = max_correction_ratio / maximum_δ
+        # We limit the changes of the potential to a maximum
+        max_correction_max = 20.0
+        max_correction_μ = 5.0
+        max_correction_in_between = 10.0
+
+        if maximum_δ > max_correction_max
+            correction_ratio = min(correction_ratio, max_correction_max / maximum_δ)
+        elseif μ_δ > max_correction_μ
+            correction_ratio = min(correction_ratio, max_correction_μ / μ_δ)
+        elseif (μ_δ + maximum_δ) / 2 > max_correction_in_between
+            correction_ratio =
+                min(correction_ratio, max_correction_in_between / ((μ_δ + maximum_δ) / 2))
+        end
     end
 
     # if δ > 0, the intensity loss is too high, or the Laplacian is too high at that point.
@@ -420,7 +436,7 @@ function march_mesh!(mesh::FaceMesh)
             [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom)]
         list_maximum_t = [
             time for time ∈ find_maximum_t.(list_triangles) if
-            !isnan(time) && time > 0.0 && time < 10.0
+            !isnan(time) && time > 0.0 && time < 1e6
         ]
 
         if !isempty(list_maximum_t)
@@ -429,13 +445,14 @@ function march_mesh!(mesh::FaceMesh)
             max_shift = max(abs(∇ϕᵤ[row, col]), abs(∇ϕᵥ[row, col]))
 
             # No shift more than 100 pixels
-            max_pixel_move = 10.0
+            max_pixel_move = 100.0
 
             δ = min(min_positive_t / 2.0, max_pixel_move / max_shift)
-            mesh.corners.r[row, col] =
-                clamp(mesh.corners.r[row, col] + δ * ∇ϕᵤ[row, col], 1, height - 1)
-            mesh.corners.c[row, col] =
-                clamp(mesh.corners.c[row, col] + δ * ∇ϕᵥ[row, col], 1, width - 1)
+            δ_row = clamp.(δ * ∇ϕᵤ[row, col], -max_pixel_move, max_pixel_move)
+            δ_col = clamp.(δ * ∇ϕᵥ[row, col], -max_pixel_move, max_pixel_move)
+
+            mesh.corners.r[row, col] = clamp(mesh.corners.r[row, col] + δ_row, 1, height)
+            mesh.corners.c[row, col] = clamp(mesh.corners.c[row, col] + δ_col, 1, width)
         end
     end
 
