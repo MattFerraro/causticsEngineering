@@ -1,23 +1,26 @@
 name = "CausticsEngineering"
 uuid = "e17b973c-3eae-4e30-9cf2-ee583e3dfd43"
 authors = ["Matt Ferraro", "Emmanuel Rialland"]
-version = "0.1.0"
+version = "0.2.0"
 
 [deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 Debugger = "31a5f54b-26ea-5ae9-a837-f05ce5417438"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterTools = "35a29f4d-8980-5a13-9543-d66fff28ecb8"
 FileIO = "5789e2e9-d7fb-5bc7-8068-2c6fae9b9549"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+GeometryBasics = "5c1252a2-5f33-56bf-86c9-59e7332b4326"
 Images = "916415d5-f1e6-5110-898d-aaa5f9f070e0"
 JuliaFormatter = "98e50ef6-434e-11e9-1051-2b60c6c9e899"
 MeshIO = "7269a6da-0436-5bbc-96c2-40638cbb6118"
+MeshViz = "9ecf9c4f-6e5a-4b5e-83ae-06f2c7a661d8"
 Meshes = "eacbb407-ea5a-433e-ab97-5258b1ca43fa"
+Plotly = "58dd65bb-95f3-509e-9936-c39a10fdeae7"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
-StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
-StructArrays = "09ab397b-f2b6-538f-b94a-2f83cf4a842a"
 
 [compat]
 julia = "1"

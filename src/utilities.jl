@@ -82,7 +82,7 @@ Origin is top left, going right and down .`x` goes horizontal and follows column
 
 # Velocity
 
-Velocity vector along `x` and `y` (velocity along h not necessary).
+Velocity vector along `row` and `col` (velocity along h not used).
 
 Implementation is a struc of arrays. Easier to vectorise.
 
@@ -101,9 +101,6 @@ mutable struct FieldVertex3D
 
     rows_numbers::AbstractMatrix{Float64}
     cols_numbers::AbstractMatrix{Float64}
-
-    # FieldVertex3D(size, mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers) = new(size, mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
-
 end
 
 # Information about each corner surrounding a pixel. Posts&fences warning!!!
@@ -117,12 +114,6 @@ function FieldVertex3D(height, width)
 
     mvr = zeros(Float64, height + 1, width + 1)
     mvc = zeros(Float64, height + 1, width + 1)
-
-    # mr = rows_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    # mc = cols_numbers + rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    # mϕ = rand(Float64, height, width) ./ 1_000 .- 0.5 / 1_000
-    # mvr = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
-    # mvc = rand(Float64, height + 1, width + 1) ./ 1_000 .- 0.5 / 1_000
 
     fv = FieldVertex3D((height, width), mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
     reset_border_values!(fv)
@@ -139,6 +130,7 @@ function reset_border_values!(corners::FieldVertex3D)
     # Reset the border at the fixed values fixed coordinates.
     corners.r[1, :] .= corners.rows_numbers[1, :]
     corners.r[end, :] .= corners.rows_numbers[end, :]
+
     corners.r[:, 1] .= corners.rows_numbers[:, 1]
     corners.r[:, end] .= corners.rows_numbers[:, end]
 
@@ -227,9 +219,6 @@ struct FaceMesh
 end
 
 
-
-
-
 """
 $(SIGNATURES)
 
@@ -310,7 +299,6 @@ triangle3D(mesh::FaceMesh, ci::CartesianIndex{2}, side = Union{:top,:bottom}) =
     triangle3D(mesh, ci[1], ci[2], side)
 
 
-
 """
 $(SIGNATURES)
 
@@ -368,12 +356,25 @@ function area(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom})
 end
 
 
-average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m)) < 1e10
+"""
+$(SIGNATURES)
 
-function smallest_positive(x1::Float64, x2::Float64)
-    x1 < 0.0 && x2 < 0.0 && return -1.0
-    x1 >= 0.0 && x2 < 0.0 && return x1
-    x1 < 0.0 && x2 >= 0.0 && return x2
-    x1 >= 0.0 && x2 >= 0.0 && return min(x1, x2)
-    return -1.0
+A Mesh is a collection of triangles. The brightness flowing through a given triangle is just proportional to its
+area in the r, r plane. h is ignored.
+
+The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
+has been shifted and flexed around.
+"""
+function get_area_corners(mesh::FaceMesh)
+    height, width = size(mesh)
+
+    top_tri_area =
+        [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
+    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
+
+    bot_tri_area =
+        [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
+    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
+
+    return top_tri_area + bot_tri_area
 end

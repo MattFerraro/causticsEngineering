@@ -1,189 +1,130 @@
 using Revise, Debugger
 
 using Images
-image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
-
 using CausticsEngineering
+
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/salvador_dali_2.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/statue_of_liberty_2.jpg"); # Check current working directory with pwd()
+
+image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
+
+using Plots;
+gr();
 mesh, imageBW = engineer_caustics(image);
 
+# Check a few values to make sure they make sense
+mesh.corners.r
+mesh.corners.vr
+minimum(mesh.corners.vr)
+maximum(mesh.corners.vr)
 
-Gray.(imageBW)
+mesh.corners.c
+mesh.corners.vc
+minimum(mesh.corners.vc)
+maximum(mesh.corners.vc)
 
-mesh.pixel.r[1:10, 1:10]
-mesh.pixel.c[1:10, 1:10]
-mesh.pixel.ϕ[1:10, 1:10]
-mesh.pixel.vr[1:10, 1:10]
-mesh.pixel.vc[1:10, 1:10]
+mesh.corners.ϕ
+minimum(mesh.corners.ϕ)
+maximum(mesh.corners.ϕ)
+mean_ϕ = sum(mesh.corners.ϕ) / length(mesh.corners.ϕ)
 
-mesh.toptriangles[1:10]
-mesh.bottriangles[1:10]
-
-mesh.pixel.r[250:260, 250:260]
-mesh.pixel.c[250:260, 250:260]
-mesh.pixel.ϕ[250:260, 250:260]
+# Plot the last vector field
+p = plot_as_quiver(mesh, n_steps = 60, scale = 5.0, max_length = 20)
 
 
-using Test
 
-t3 = (
-    CausticsEngineering.Vertex3D(5.0, 5.0, 0.01, 0.1, -2.0),
-    CausticsEngineering.Vertex3D(6.0, 5.0, 0.01, 0.1, 2.0),
-    CausticsEngineering.Vertex3D(5.5, 5.5, 0.01, 0.5, -3.0),
+# Generate dictionaries and arrays containing the vertices and triangles.
+triangle_dict, vertex_dict, triangle_index, vertex_index =
+    create_solid(mesh; bottom_distance = Bottom_Offset, top_distance = Top_Offset)
+
+
+# Can be done in 2 steps
+#
+# triangle_dict, vertex_dict = create_solid_as_dict(
+#     mesh;
+#     bottom_distance = Bottom_Offset,
+#     top_distance = Top_Offset
+# )
+#
+# # Generate array or coordinates and indices usable to create traditional mesh objects
+# _, _, triangle_index, vertex_index = create_solid(
+#     triangle_dict,
+#     vertex_dict;
+#     bottom_distance = Bottom_Offset,
+#     top_distance = Top_Offset,
+#     )
+
+# Area of all the distorted pixels
+am = CausticsEngineering.get_area_corners(mesh)
+maximum(am)
+minimum(am)
+
+# Save as an obj file
+save_obj!(
+    triangle_index,
+    vertex_index,
+    "./examples/result_cat_mesh.obj",
+    scale = Float64(Meters_Per_Pixel),
+    scaleh = Float64(Meters_Per_Pixel),
 )
 
-CausticsEngineering.find_maximum_t(t3)
 
+# Convert to a mesh structure
+using Meshes
 
-typeof(CartesianIndex(3, 5)[1])
+# Zone to plot
+row_min = 100.0
+row_max = 200.0
+col_min = 100.0
+col_max = 200.0
 
-t = Matrix{Tuple{CartesianIndex(2),CartesianIndex(2),CartesianIndex(2)}}(undef, 2, 2)
+function clip_trangle_index(
+    triangle_index,
+    vertex_index;
+    row_min = 100.0,
+    row_max = 200.0,
+    col_min = 100.0,
+    col_max = 200.0,
+)
 
-t[1, 1] = (CartesianIndex(1, 1), CartesianIndex(2, 1), CartesianIndex(1, 2))
-typeof((CartesianIndex(1, 1), CartesianIndex(2, 1), CartesianIndex(1, 2)))
+    function is_in_zone(t)::Bool
+        p1, p2, p3 = t
+        v1_r, v1_c = vertex_index[p1]
+        v2_r, v2_c = vertex_index[p2]
+        v3_r, v3_c = vertex_index[p3]
 
+        return row_min <= v1_r <= row_max &&
+               col_min <= v1_c <= col_max &&
+               row_min <= v2_r <= row_max &&
+               col_min <= v2_c <= col_max &&
+               row_min <= v3_r <= row_max &&
+               col_min <= v3_c <= col_max
+    end
 
-f.toptriangles[CartesianIndex(5, 5)]
-
-f = FaceMesh(5, 5);
-v3 = CausticsEngineering.top_triangle3D(f, CartesianIndex(5, 5))
-CausticsEngineering.find_maximum_t(v3)
-
-v3 = CausticsEngineering.top_triangle3D(f, CartesianIndex(5, 5))
-CausticsEngineering.area(v3...)
-
-v3 = CausticsEngineering.bot_triangle3D(f, CartesianIndex(5, 5))
-CausticsEngineering.area(v3...)
-
-CausticsEngineering.get_pixel_area(f)
-
-for _ = 1:100
-    h = rand(Float64, (10, 10))
-    d = rand(Float64, (10, 10))
-    print(CausticsEngineering.relax(h, d))
+    return [t for t ∈ triangle_index if is_in_zone(t)]
 end
 
-c = t[1]
+# Select relevant triangles
+triangle_index3D = clip_trangle_index(triangle_index, vertex_index)
+connections = Meshes.connect.(triangle_index3D)
 
-f.pixel(c)
+# 3D Mesh
+vertices3D = Meshes.Point3.(vertex_index)
+cat_mesh3D = Meshes.SimpleMesh(vertices3D, connections)
 
-t = CausticsEngineering.top_triangle3D(f, CartesianIndex(1, 1))
-
-
-
-# Indexing structs
-struct TT
-    a::Int
-    b::Int
-end
-
-using StructArrays
+# 2D Mesh
+vertex_index2D = [(v[1], v[2]) for v ∈ vertex_index]
+vertices2D = Meshes.Point2.(vertex_index2D)
+cat_mesh2D = Meshes.SimpleMesh(vertices2D, connections)
 
 
-aa = StructArrays()
+# NOT WORKING...
+using MeshViz
 
-aa[:].a = 0
-
-
-[1, 2, 3] |> filter(isnan)
-
-
-begin
-    r1, c1, ϕ1, vr1, vc1 = (rand(5) .- 0.5) .* 20
-    r2, c2, ϕ2, vr2, vc2 = (rand(5) .- 0.5) .* 20
-    r3, c3, ϕ3, vr3, vc3 = (rand(5) .- 0.5) .* 20
-
-    vertex1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
-    vertex2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
-    vertex3 = Vertex3D(r3, c3, ϕ3, vr3, vc3)
-
-    println(
-        CausticsEngineering.area(vertex1, vertex2, vertex3),
-        "   ",
-        CausticsEngineering.find_maximum_t(vertex1, vertex2, vertex3),
-    )
-end
-
-
-r1, c1, ϕ1, vr1, vc1 = (rand(5) .- 0.5) .* 20
-r2, c2, ϕ2, vr2, vc2 = (rand(5) .- 0.5) .* 20
-r3, c3, ϕ3, vr3, vc3 = (rand(5) .- 0.5) .* 20
-
-p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
-p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
-p3 = Vertex3D(r3, c3, ϕ3, vr3, vc3)
-
-# To make the calculation simpler, everything is translated so that A is at the
-# origin of the plane and its velocity is nil.
-Br = p2.r - p1.r
-Bc = p2.c - p1.c
-Cr = p3.r - p1.r
-Cc = p3.c - p1.c
-
-t_vBr = p2.vr - p1.vr
-t_vBc = p2.vc - p1.vc
-t_vCr = p3.vr - p1.vr
-t_vCc = p3.vc - p1.vc
-
-# After this, given that Ar = Ac = t_vAr = t_vAc = 0, the area is nil iff
-# (Br + t_vBr) (Cc + t_vCc ) - (Cr + t_vCr) (Bc + t_vBc) = 0.
-# After expansion and reshuffling to have a quadratic equation where t
-# is the variable, the coefficients of that equation are:
-a = t_vCc * t_vBr - t_vBc * t_vCr
-b = -Bc * t_vCr - Cr * t_vBc + Br * t_vCc + Cc * t_vBr
-c = Br * Cc - Cr * Bc
-
-discriminant = b^2 - 4a * c
-d = discriminant >= 0.0 ? sqrt(discriminant) : 0
-t1 = (-b - d) / 2a
-t2 = (-b + d) / 2a
-t1, t2, CausticsEngineering.smallest_positive((-b - d) / 2a, (-b + d) / 2a)
-
-
-Vertex3D()
-
-
-
-
-a = Vertex3D(
-    489.20336199266757,
-    190.09282140997482,
-    -58505.12856934825,
-    -39628.63636211195,
-    -50804.04679723241,
-)
-b = Vertex3D(
-    490.30273062001396,
-    189.42556748453276,
-    29305.470378387537,
-    -10020.45529953039,
-    48181.962585623834,
-)
-c = Vertex3D(
-    489.89918140614986,
-    189.67049879639754,
-    -18876.492207236297,
-    39648.76478266787,
-    -65706.41461026447,
-)
-CausticsEngineering.find_maximum_t(a, b, c)
-
-a = Vertex3D(30.0, 271.0, 0.8354160335261099, -0.053188093456838725, -0.00538632666184502)
-b = Vertex3D(31.0, 270.0, 0.8353725644270783, -0.005828514543554375, -0.05323156255587036)
-c = Vertex3D(
-    30.499999997149644,
-    270.5,
-    0.8886041269829487,
-    0.04690021252675358,
-    0.04690021225938901,
-)
-CausticsEngineering.find_maximum_t(a, b, c)
-
-ab = CausticsEngineering.dist(a, b)
-ac = CausticsEngineering.dist(a, c)
-cb = CausticsEngineering.dist(c, b)
-
-s = (ab + ac + cb) / 2.0
-
-s - ab
-s - ab
-s - ab
+# Explicitly import the preferred backend (depending on use case)
+import GLMakie
+MeshViz.viz(cat_mesh3D)
+MeshViz.viz(cat_mesh2D)

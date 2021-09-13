@@ -6,6 +6,7 @@
 *.jl.*.cov
 
 *.obj
+it*.png
 loss*.png
 
 
@@ -34,3 +35,8 @@ Manifest.toml
 *.tmp
 *.temp
 
+
+
+
+src/debug_script.jl
+examples/personal

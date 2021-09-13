@@ -1,6 +1,15 @@
 using FileIO, MeshIO
 
 
+# Utility function to name a vertex
+vertex_name(face::String, row::Int64, col::Int64)::String = "Vertex_$(name)_$(row)_$(col)"
+
+# Utility functions to create the names
+triangle_name(face::String, row::Int64, col::Int64, side::Union{Symbol,Symbol})::String =
+    "Tri_$(face)_$(row)_$(col)_$(side)"
+
+
+
 """
 $(SIGNATURES)
 
@@ -19,18 +28,13 @@ function convert(::Meshes.SimpleMesh, mesh::FaceMesh)
 end
 
 
-
 """
 $(SIGNATURES)
 
-This function saves the mesh object in stl format.
-
-The format difinition is sourced from [https://en.wikipedia.org/wiki/STL_(file_format)]().
-
-TO REFACTOR.
 """
-function save_stl!(
-    mesh::FaceMesh,
+function save_obj!(
+    triangle_index,
+    vertex_index::AbstractMatrix{Float64},
     filename::String;
     scale = 1.0,
     scaleh = 1.0,
@@ -38,41 +42,31 @@ function save_stl!(
     flipxy = false,
 )
 
-    return
-
-    height, width = size(mesh)
-
     open(filename, "w") do io
         println(io, "solid engineered_caustics")
 
-        for row ∈ 1:height, col ∈ 1:width
-            # Top triangle
-            top_triangle = top_triangle(mesh, row, col)
-            n = centroid(top_triangle)
-
+        xs = vertex_index[:, 1]
+        ys = vertex_index[:, 2]
+        zs = vertex_index[:, 3]
+        for i ∈ 1:length(xs)
             if flipxy
-                println(io, "v $(n.c * scale) $(n.r * scale) $(n.h * scaleh)")
+                println(io, "v $(ys[i] * scale) $(xs[i][1] * scale) $(zs[i] * scaleh)")
             else
-                println(io, "v $(n.r * scale) $(n.c * scale) $(n.h * scaleh)")
-            end
-
-            # Bottom triangle
-            bot_triangle = bottom_triangle(mesh, row, col)
-            n = centroid(bot_triangle)
-
-            if flipxy
-                println(io, "v $(n.y * scale) $(n.x * scale) $(n.z * scalez)")
-            else
-                println(io, "v $(n.x * scale) $(n.y * scale) $(n.z * scalez)")
+                println(io, "v $(xs[i] * scale) $(ys[i][1] * scale) $(zs[i] * scaleh)")
             end
         end
 
-        # CHECK what dims exactly represents. Number of triangles?
-        println(io, "dims $(2*mesh.width) $(2*mesh.height)")
+        t1 = triangle_index[1]
+        t2 = triangle_index[2]
+        t3 = triangle_index[3]
+        for i ∈ 1:length(t1)
+            println(io, "f $(t1[i]) $(t2[i]) $(t3[i])")
+        end
 
         println(io, "endsolid engineered_caustics")
     end
 end
+
 
 
 """

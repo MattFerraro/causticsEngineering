@@ -1,43 +1,49 @@
+
 """
 $(SIGNATURES)
 """
 function plot_as_quiver(
     mesh::FaceMesh;
-    stride = 4,
+    n_steps = 20,
     scale = 30,
-    max_length = 2,
-    flipxy = false,
+    max_length = N_Pixel_Width / n_steps,
+    fliprc = false,
     reverser = false,
     reversec = false,
 )
 
     height, width = size(mesh)
-    rs = Float64[]
-    cs = Float64[]
-    vrs = Float64[]
-    vcs = Float64[]
+    stride = Int64(ceil(max(height, width) / n_steps))
 
+    row_s = Float64[]
+    col_s = Float64[]
+    v_rows = Float64[]
+    v_cols = Float64[]
+
+    # The gradient vectors reflect change of luminosity:outward flow = bigger cells = more luminosity
+    # Plots are cosmetically look better when showing the light focusing to a specific location.
+    # Those gradients are the opposite direction.
     ϕ = -mesh.corners.ϕ
 
-    vrm = reverser ? mesh.corners.vr .* scale : -mesh.corners.vr .* scale
-    vcm = reversec ? -mesh.corners.vc .* scale : mesh.corners.vc .* scale
+    mat_vr = (reverser ? -1 : 1) .* mesh.corners.vr .* scale
+    mat_vc = (reversec ? -1 : 1) .* mesh.corners.vc .* scale
 
-    vrm = clamp.(vrm, -max_length, max_length)
-    vcm = clamp.(vcm, -max_length, max_length)
+    mat_vr = clamp.(mat_vr, -max_length, max_length)
+    mat_vc = clamp.(mat_vc, -max_length, max_length)
 
     for row = 1:stride:height, col = 1:stride:width
-        reverser ? push!(rs, row) : push!(rs, -row)
-        reversec ? push!(cs, -col) : push!(cs, col)
+        reverser ? push!(row_s, row) : push!(row_s, -row)
+        reversec ? push!(col_s, -col) : push!(col_s, col)
 
-        push!(vrs, vrm[row, col])
-        push!(vcs, vcm[row, col])
+        push!(v_rows, mat_vr[row, col])
+        push!(v_cols, mat_vc[row, col])
     end
 
-    q =
-        flipxy ? quiver(cs, rs, quiver = (vcs, vrs), aspect_ratio = :equal) :
-        quiver(rs, cs, quiver = (vrs, vcs), aspect_ratio = :equal)
-
-    display(q)
+    display(
+        fliprc ? quiver(row_s, col_s, quiver = (v_rows, v_cols)) :
+        quiver(col_s, row_s, quiver = (v_cols, v_rows)),
+    )
+    return nothing
 end
 
 
@@ -46,73 +52,77 @@ $(SIGNATURES)
 """
 function plot_as_quiver(
     ϕ;
-    stride = 4,
+    n_steps = 20,
     scale = 300,
-    max_length = 2,
-    flipxy = false,
-    reversey = false,
-    reversex = false,
+    max_length = N_Pixel_Width / n_steps,
+    fliprc = false,
+    reverser = false,
+    reversec = false,
 )
 
-    h, w = size(ϕ)
-    xs = Float64[]
-    ys = Float64[]
-    us = Float64[]
-    vs = Float64[]
+    height, width = size(ϕ)
+    stride = Int64(ceil(max(height, width) / n_steps))
 
-    for x = 1:stride:w, y = 1:stride:h
-        reversex ? push!(xs, x) : push!(xs, -x)
-        reversey ? push!(ys, -y) : push!(ys, y)
+    row_s = Float64[]
+    col_s = Float64[]
+    Δrow = Float64[]
+    Δcol = Float64[]
 
-        p1 = ϕ[y, x]
-        u = (ϕ[y, x+1] - ϕ[y, x]) * scale
-        v = (ϕ[y+1, x] - ϕ[y, x]) * scale
+    for row = 1:stride:height, col = 1:stride:width
+        dr = (-(ϕ[row, col+1] - ϕ[row, col]) * scale)
+        dc = (ϕ[row+1, col] - ϕ[row, col]) * scale
 
-        u = -u
+        reverser ? push!(row_s, col) : push!(row_s, width + 1 - col)
+        reversec ? push!(col_s, height + 1 - row) : push!(col_s, row)
+        reverser && (dr = -dr)
+        reversec && (dc = -dc)
 
-        reversey && (v = -v)
-        reversex && (u = -u)
-
-        # println(u, v)
-        u >= 0 ? push!(us, min(u, max_length)) : push!(us, max(u, -max_length))
-        v >= 0 ? push!(vs, min(v, max_length)) : push!(vs, max(v, -max_length))
+        push!(Δrow, clamp(dr, -maxlength, max_length))
+        push!(Δcol, clamp(dc, -maxlength, max_length))
     end
 
-    q =
-        flipxy ? quiver(ys, xs, quiver = (vs, us), aspect_ratio = :equal) :
-        quiver(xs, ys, quiver = (us, vs), aspect_ratio = :equal)
+    # By default, we flip to match the original image.
+    display(
+        fliprc ? quiver(row_s, col_s, quiver = (Δrow, Δcol)) :
+        quiver(col_s, row_s, quiver = (Δcol, Δrow)),
+    )
 
-    display(q)
+    return nothing
 end
 
 
 """
 $(SIGNATURES)
 """
-function plot_velocities_as_quiver(vx, vy; stride = 4, scale = 300, max_length = 2)
-    h, w = size(vx)
+function plot_velocities_as_quiver(
+    vr,
+    vc;
+    n_steps = 20,
+    scale = 300,
+    max_length = N_Pixel_Width / n_steps,
+)
 
-    xs = Float64[]
-    ys = Float64[]
-    us = Float64[]
-    vs = Float64[]
+    height, width = size(vr)
+    stride = Int64(ceil(max(height, width) / n_steps))
 
-    for x = 1:stride:w, y = 1:stride:h
-        push!(xs, x)
-        push!(ys, h - y)
+    row_s = Float64[]
+    col_s = Float64[]
+    Δrow = Float64[]
+    Δcol = Float64[]
 
-        u = max(vx[x, y], 0.001)
-        v = max(vy[x, y], 0.001)
+    dr = max.(vr, 0.001)
+    dc = max.(vc, 0.001)
 
-        push!(us, u)
-        push!(vs, v)
-        # println(u, ": ", v)
+    for row = 1:stride:height, col = 1:stride:width
+        push!(row_s, height - row)
+        push!(col_s, col)
+
+        push!(Δrow, dr[row, col])
+        push!(Δcol, dc[row, col])
     end
 
     # readline()
-    q = quiver(xs, ys, quiver = (us, vs), aspect_ratio = :equal)
-    display(q)
-    readline()
+    display(quiver(row_s, col_s, quiver = (Δrow, Δcol), aspect_ratio = :equal))
 end
 
 
@@ -120,24 +130,43 @@ end
 """
 $(SIGNATURES)
 """
-function plot_loss!(D, suffix, img)
-    println("Loss:")
-    println("\tMinimum loss: $(minimum(D))")
-    println("\tMaximum loss: $(maximum(D))")
+function save_plot_scalar_field!(calculated_scalar_field, filename, img)
+    scalar_field = calculated_scalar_field'
 
-    blue = zeros(size(D))
-    blue[D.>0] = D[D.>0]
-    red = zeros(size(D))
-    red[D.<0] = -D[D.<0]
-    green = zeros(size(D))
+    blue = zeros(size(scalar_field))
+    red = zeros(size(scalar_field))
+    green = zeros(size(scalar_field))
+
+    blue[scalar_field.>0] = scalar_field[scalar_field.>0]
+    red[scalar_field.<0] = -scalar_field[scalar_field.<0]
 
     rgbImg = RGB.(red, green, blue)'
-    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
+    save("./examples/$(filename).png", map(clamp01nan, rgbImg))
+end
 
-    # println("Saving output image:")
-    # println(typeof(img))
-    # E = Gray.(D)
-    # println(typeof(E))
-    # outputImg = img - E
-    # save("./examples/actual_$(suffix).png", outputImg)
+
+"""
+$(SIGNATURES)
+"""
+function save_plot_scalar_field(calculated_scalar_field, prefix, img)
+    scalar_field = calculated_scalar_field'
+    normalised_D_max = scalar_field ./ maximum(scalar_field)
+    normalised_D_min = scalar_field ./ minimum(scalar_field)
+
+    blue = zeros(size(scalar_field))
+    red = zeros(size(scalar_field))
+    green = zeros(size(scalar_field))
+
+    blue[scalar_field.>0] = normalised_D_max[scalar_field.>0]
+    red[scalar_field.<0] = -normalised_D_min[scalar_field.<0]
+
+    rgbImg = RGB.(red, green, blue)'
+    save("./examples/$(prefix)_loss.png", map(clamp01nan, rgbImg))
+
+    println("Saving output image:")
+    println(typeof(img))
+    E = Gray.(scalar_field)
+    println(typeof(E))
+    outputImg = img - E
+    save("./examples/$(prefix)_actual.png", outputImg)
 end
