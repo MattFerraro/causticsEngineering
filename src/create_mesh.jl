@@ -37,10 +37,14 @@ function engineer_caustics(source_image)
     start_max_update = 1_000.0
     max_update = start_max_update
     old_max_update = 2 * start_max_update
+
+    error_luminosity = 1e9
+    old_error_luminosity = 2 * error_luminosity
     iteration_count = 0
 
     while (
-        abs(max_update) > 1e-2 &&
+        abs(max_update) > 0.0 &&
+        abs((error_luminosity - old_error_luminosity) / old_error_luminosity) > 0.01 &&
         abs((max_update - old_max_update) / old_max_update) > 0.0 &&
         iteration_count < 10_000
     )
@@ -51,8 +55,12 @@ function engineer_caustics(source_image)
         )
 
         old_max_update = max_update
-        max_update = solve_velocity_potential!(mesh, imageBW, "it$(iteration_count)")
-        print("Vertical move max update = $(max_update) \n")
+        old_error_luminosity = error_luminosity
+        max_update, error_luminosity =
+            solve_velocity_potential!(mesh, imageBW, "it$(iteration_count)")
+        print(
+            "Vertical move max update = $(max_update)   --  Mean error luminosity = $(error_luminosity)\n",
+        )
     end
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
@@ -198,7 +206,7 @@ function solve_velocity_potential!(mesh, image, prefix)
 
     plot_as_quiver(mesh, n_steps = 30, scale = 1.0, max_length = height / 20)
 
-    return max_update
+    return max_update, sum(abs.(error_luminosity)) / length(error_luminosity)
 end
 
 
@@ -239,10 +247,10 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
 
     # We need to find the divergence of the Vector field described by Nx and Ny
     # div_row/div_col are _FENCES_SIZED_
-    div_row = zeros(Float64, width, height)
-    div_col = zeros(Float64, width, height)
-    @. div_row[1:end, 1:end] = N_row[2:end, 1:end-1] - N_row[1:end-1, 1:end-1]
-    @. div_col[1:end, 1:end] = N_col[1:end-1, 2:end] - N_col[1:end-1, 1:end-1]
+    div_row = zeros(Float64, height, width)
+    div_col = zeros(Float64, height, width)
+    div_row[1:end, 1:end] = N_row[2:end, 1:end-1] .- N_row[1:end-1, 1:end-1]
+    div_col[1:end, 1:end] = N_col[1:end-1, 2:end] - N_col[1:end-1, 1:end-1]
 
     # divergence_direction = zeros(Float64, size(div_row))
     # divergence_direction is _FENCES_SIZED_

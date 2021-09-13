@@ -4,6 +4,9 @@ using Images
 using CausticsEngineering
 
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/salvador_dali_2.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/statue_of_liberty_2.jpg"); # Check current working directory with pwd()
+
 image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
