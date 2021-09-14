@@ -21,7 +21,7 @@ function engineer_caustics(source_image; clamp_correction = true)
     mesh = FaceMesh(N_Pixel_Height, N_Pixel_Width)
 
     # The total energy going through the lens is equal to the amount of energy on the caustics
-    total_energy_lens = N_Pixel_Height * N_Pixel_Width * 1     # 1 unit of energy per pixel
+    total_energy_lens = N_Pixel_Height * N_Pixel_Width * 1.0     # 1 unit of energy per pixel
     total_energy_caustics = sum(imageBW)
     average_energy_per_pixel = average(imageBW)
 
@@ -39,13 +39,8 @@ function engineer_caustics(source_image; clamp_correction = true)
     old_error_luminosity = 2 * error_luminosity
     iteration_count = 0
 
-    while (
-        abs(max_update) > 1e-5 &&
-        error_luminosity > 1e-2 &&
-        abs((error_luminosity - old_error_luminosity) / old_error_luminosity) > 0.0 &&
-        abs((max_update - old_max_update) / old_max_update) > 0.0 &&
-        iteration_count < 10_000
-    )
+    while (abs(max_update) > 1e-5 && error_luminosity > 1e-5 &&     # abs((error_luminosity - old_error_luminosity) / old_error_luminosity) > 0.0 &&     # abs((max_update - old_max_update) / old_max_update) > 0.0 &&
+    iteration_count < 10_000)
         iteration_count += 1
 
         println(
@@ -88,6 +83,9 @@ $(SIGNATURES)
 Zones of high luminosity should be covered with more triangles and should attract more vertices.
 """
 function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
+    # Keep that to track how much progress is made
+    mesh_ϕ = copy(mesh.corners.ϕ)
+
     # Get the area of each individual pixel as stretch/shrunk on the lens. Area = energy.
     # _FENCES_SIZED_
     lens_pixels_area = get_lens_pixels_area(mesh)
@@ -106,22 +104,20 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
             solve_velocity_potential: error_luminosity values seem too large
                 max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
 
-                """
+            """
 
 
     # Save the loss image as a png
-    println("""
-        Loss:
-            Maximum loss: $(maximum(error_luminosity))
-            Minimum loss: $(minimum(error_luminosity))
-            Average abs loss: $(average_absolute(error_luminosity))
-            Average loss: $(average(error_luminosity))
-        """)
+    println(
+        """
+    Luminosity error:
+        Max/min luminosity error: $(maximum(error_luminosity)) / $(minimum(error_luminosity))
+        Average abs loss: $(average_absolute(error_luminosity))
+        Average loss: $(average(error_luminosity))
+        """,
+    )
     save_plot_scalar_field!(error_luminosity, prefix * "_loss", image)
 
-    # For the purpose of Poisson, we need to divergence to increase towards the inside: negative divergence for high luminosity
-    # error_luminosity = -error_luminosity
-    mesh_ϕ = copy(mesh.corners.ϕ)
 
     # start_max_update has no particular meeting.
     # It is basically the initial max_update. But then is used to initialise other variables so that
@@ -130,19 +126,14 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
     max_update = start_max_update
     old_max_update = 2 * start_max_update
     iteration_count = 0
-    new_divergence_max = 1_000.0
-    new_divergence_mean = 1_000.0
 
     while (
         abs(max_update) > 1e-5 &&
-        abs((max_update - old_max_update) / old_max_update) >= 0.00 &&
-        new_divergence_max >= 0.0
+        abs((max_update - old_max_update) / old_max_update) >= 0.00
     )
 
         iteration_count += 1
         iteration_count % 100 == 0 && println("Converging for intensity: $(max_update)")
-
-        mesh.corners.ϕ[:, :] .-= average(mesh.corners.ϕ)
 
         old_max_update = max_update
         println(
@@ -164,8 +155,8 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
             error_luminosity;
             clamp_correction = clamp_correction,
         )
-        mesh.corners.ϕ[:, :] .= ϕ[:, :]
 
+        mesh.corners.ϕ[:, :] .= ϕ[:, :]
         @assert test_average_absolute(mesh.corners.ϕ) """
 
                 solve_velocity_potential: ϕ values seem too large
@@ -176,22 +167,9 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
                     max_update = $(max_update)
 
                     """
-        new_divergence =
-            abs.(
-                (
-                    mesh.corners.ϕ[begin+1:end, begin:end-1] .-
-                    mesh_ϕ[begin:end-1, begin:end-1]
-                ) .+ (
-                    mesh.corners.ϕ[begin:end-1, begin+1:end] .-
-                    mesh_ϕ[begin:end-1, begin:end-1]
-                ),
-            )
-
-        new_divergence_max = maximum(new_divergence)
-        new_divergence_mean = average(new_divergence)
-
     end
 
+    mesh.corners.ϕ[:, :] .-= average(mesh.corners.ϕ)
 
     # Relevel ϕ around its average. It doesn't matter for potential fields
     mean_ϕ = average(mesh.corners.ϕ)
@@ -212,7 +190,7 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
 
     # Now we need to march the mesh row,col corner locations according to this gradient.
     march_mesh!(mesh)
-    plot_as_quiver(mesh, n_steps = 30, scale = 1.0, max_length = N_Pixel_Height / 20)
+    plot_as_quiver(mesh, n_steps = 50, scale = 1.0, max_length = N_Pixel_Height / 20)
 
     return max_update, average_absolute(error_luminosity)
 end
@@ -380,7 +358,7 @@ function propagate_poisson(
     # Default correction ratio to adjust δ is ω / 4.0
     ω_clamped = ω / 4.0
     # We limit the changes of the potential to a maximum
-    max_correction_max = 20.0
+    max_correction_max = 50.0
     max_correction_μ = 7.0
 
     abs_δ = abs.(δ)
@@ -447,7 +425,9 @@ function march_mesh!(mesh::FaceMesh)
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
-    # Warning: The indices are necessary because corner and ∇ϕ are of different sizes
+    #
+    # CHECK - SIGN?
+    #
     mesh.corners.vr .= -∇ϕᵤ
     mesh.corners.vc .= -∇ϕᵥ
 
@@ -473,10 +453,8 @@ function march_mesh!(mesh::FaceMesh)
         ],
     )
 
-    list_maximum_t = [
-        time for time ∈ find_maximum_t.(list_triangles) if
-        !isnan(time) && time > 0.0 && time < 1e6
-    ]
+    list_maximum_t =
+        [time for time ∈ find_maximum_t.(list_triangles) if !isnan(time) && time > 0.0]
 
     if !isempty(list_maximum_t)
         min_positive_t = minimum(list_maximum_t)
@@ -512,23 +490,4 @@ function march_mesh!(mesh::FaceMesh)
 
                 """
     return nothing
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function ∇(ϕ::Matrix{Float64})
-    ∇ϕᵤ = zeros(Float64, size(ϕ))   # divergence on the right edge will be filled with zeros
-    ∇ϕᵥ = zeros(Float64, size(ϕ))   # divergence on bottom edge will be filled with zeros
-
-    ∇ϕᵤ[begin:end-1, begin:end-1] =
-        ϕ[begin+1:end, begin:end-1] .- ϕ[begin:end-1, begin:end-1]
-    ∇ϕᵥ[begin:end-1, begin:end-1] =
-        ϕ[begin:end-1, begin+1:end] .- ϕ[begin:end-1, begin:end-1]
-
-    fill_borders!(∇ϕᵤ, 0.0)
-    fill_borders!(∇ϕᵥ, 0.0)
-
-    return ∇ϕᵤ, ∇ϕᵥ
 end

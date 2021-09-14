@@ -31,6 +31,30 @@ end
 """
 $(SIGNATURES)
 
+Approximates the gradient of a scalar field.
+"""
+function ∇(ϕ::Matrix{Float64})
+    # x, y only represents the first and the second variables. No reference to graphical representations.
+
+    ∇ϕx = zeros(Float64, size(ϕ))   # divergence on the right edge will be filled with zeros
+    ∇ϕy = zeros(Float64, size(ϕ))   # divergence on bottom edge will be filled with zeros
+
+    ∇ϕx[begin:end-1, begin:end-1] =
+        ϕ[begin+1:end, begin:end-1] .- ϕ[begin:end-1, begin:end-1]
+    ∇ϕy[begin:end-1, begin:end-1] =
+        ϕ[begin:end-1, begin+1:end] .- ϕ[begin:end-1, begin:end-1]
+
+    fill_borders!(∇ϕx, 0.0)
+    fill_borders!(∇ϕy, 0.0)
+
+    return ∇ϕx, ∇ϕy
+end
+
+
+
+"""
+$(SIGNATURES)
+
 Calculate the second-order Laplace operator by convolution of a kernel.
 """
 function laplacian(ϕ::AbstractMatrix{Float64})

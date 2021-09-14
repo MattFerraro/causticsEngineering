@@ -1,7 +1,7 @@
 using Revise, Debugger
-
 using Images, Plots;
 gr();
+
 using CausticsEngineering
 
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
