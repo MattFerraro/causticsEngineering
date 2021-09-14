@@ -35,8 +35,7 @@ Manifest.toml
 *.tmp
 *.temp
 
-
-
-
+*sync-conflict*
 src/debug_script.jl
 examples/personal
+

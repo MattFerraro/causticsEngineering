@@ -1,26 +1,30 @@
 using Revise, Debugger
 
-using Images
+using Images, Plots;
+gr();
 using CausticsEngineering
 
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
 
-image = Images.load("./examples/salvador_dali_1.jpg"); # Check current working directory with pwd()
-image = Images.load("./examples/salvador_dali_2.jpg"); # Check current working directory with pwd()
-image = Images.load("./examples/statue_of_liberty_2.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/salvador_dali_1.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/salvador_dali_2.jpg"); # Check current working directory with pwd()
+
+image = Images.load("./examples/personal/statue_of_liberty_1.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/statue_of_liberty_2.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/statue_of_liberty_3.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 
-using Plots;
-gr();
-mesh, imageBW = engineer_caustics(image);
+mesh, imageBW = engineer_caustics(image; clamp_correction = true);
 
 
 imageBW = Float64.(Gray.(image));
-total_energy_caustics = sum(imageBW)
-imageBW = imageBW ./ total_energy_caustics;
+average_energy_caustics = CausticsEngineering.average(imageBW)
+imageBW = imageBW / average_energy_caustics;
+
+(sum(imageBW) / length(imageBW) - 1.0) * 1e12
 
 
 # Check a few values to make sure they make sense

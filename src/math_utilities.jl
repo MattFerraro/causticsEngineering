@@ -1,7 +1,3 @@
-"""
-$(SIGNATURES)
-"""
-average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m))
 
 """
 $(SIGNATURES)
@@ -12,17 +8,22 @@ average(m::AbstractMatrix) = (sum(m) / length(m))
 """
 $(SIGNATURES)
 """
-test_average_absolute(m::AbstractMatrix) = (average_absolute(m)) < 1e10
+average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m))
+
+
+"""
+$(SIGNATURES)
+"""
+test_average_absolute(m::AbstractMatrix) = (average_absolute(m)) < 1e6
 
 
 """
 $(SIGNATURES)
 """
 function smallest_positive(x1::Float64, x2::Float64)
-    x1 < 0.0 && x2 < 0.0 && return -1.0
-    x1 >= 0.0 && x2 < 0.0 && return x1
-    x1 < 0.0 && x2 >= 0.0 && return x2
-    x1 >= 0.0 && x2 >= 0.0 && return min(x1, x2)
+    (x1 >= 0.0 && x2 < 0.0) && return x1
+    (x1 < 0.0 && x2 >= 0.0) && return x2
+    (x1 >= 0.0 && x2 >= 0.0) && return min(x1, x2)
     return -1.0
 end
 

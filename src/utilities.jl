@@ -364,7 +364,7 @@ area in the r, r plane. h is ignored.
 The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
 has been shifted and flexed around.
 """
-function get_area_corners(mesh::FaceMesh)
+function get_lens_pixels_area(mesh::FaceMesh)
     height, width = size(mesh)
 
     top_tri_area =
@@ -375,5 +375,20 @@ function get_area_corners(mesh::FaceMesh)
         [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
     @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
 
-    return top_tri_area + bot_tri_area
+
+    total_area = top_tri_area + bot_tri_area
+    @assert 1.0 - 1e-4 < average(total_area) < 1.0 + 1e-4 """
+
+            solve_velocity_potential:
+                The total energy through the lens has more than 1% difference compared to 1.0 energy per pixel.
+                Total luminosity through lens: $(sum(lens_pixels_area))
+                Average luminosity through lens: $(average(lens_pixels_area))
+                Total luminosity caustics: $(sum(image))
+                Total luminosity error: $(sum(error_luminosity))
+                Maximum error: $(maximum(error_luminosity))")
+                Minimum error: $(minimum(error_luminosity))")
+                Iteration prefix: $(prefix)
+
+                """
+    return total_area
 end
