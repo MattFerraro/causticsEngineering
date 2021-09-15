@@ -143,8 +143,6 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
             max/min mesh.corners.ϕ = $(maximum(mesh.corners.ϕ)) / $(minimum(mesh.corners.ϕ))
             iteration count = $(iteration_count)
             max_update = $(max_update)
-            new mean divergence = $(new_divergence_mean)
-            new maximum divergence = $(new_divergence_max)
         """,
         )
 
@@ -358,8 +356,8 @@ function propagate_poisson(
     # Default correction ratio to adjust δ is ω / 4.0
     ω_clamped = ω / 4.0
     # We limit the changes of the potential to a maximum
-    max_correction_max = 50.0
-    max_correction_μ = 7.0
+    max_correction_max = 1e12
+    max_correction_μ = 100.0
 
     abs_δ = abs.(δ)
     maximum_δ = maximum(abs_δ)
