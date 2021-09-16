@@ -85,18 +85,18 @@ end
 end
 
 @testset "More triangle area" begin
-    @test area(0, 1, 1 , 0, 0, 0)
+    @test area(0, 1, 1, 0, 0, 0)
 end
 
 
-v1 = CausticsEngineering.Vertex3D(0.0, 1.0, 0.0 , 0.0, 0.0)
-v2 = CausticsEngineering.Vertex3D(1.0, 0.0, 0.0 , 0.0, 0.0)
-v3 = CausticsEngineering.Vertex3D(0.0, 0.0, 0.0 , 0.0, 0.0)
+v1 = CausticsEngineering.Vertex3D(0.0, 1.0, 0.0, 0.0, 0.0)
+v2 = CausticsEngineering.Vertex3D(1.0, 0.0, 0.0, 0.0, 0.0)
+v3 = CausticsEngineering.Vertex3D(0.0, 0.0, 0.0, 0.0, 0.0)
 CausticsEngineering.area(v1, v2, v3)
 
-v1 = CausticsEngineering.Vertex3D(0.0, 2.0, 0.0 , 0.0, 0.0)
-v2 = CausticsEngineering.Vertex3D(2.0, 0.0, 0.0 , 0.0, 0.0)
-v3 = CausticsEngineering.Vertex3D(0.0, 0.0, 0.0 , 0.0, 0.0)
+v1 = CausticsEngineering.Vertex3D(0.0, 2.0, 0.0, 0.0, 0.0)
+v2 = CausticsEngineering.Vertex3D(2.0, 0.0, 0.0, 0.0, 0.0)
+v3 = CausticsEngineering.Vertex3D(0.0, 0.0, 0.0, 0.0, 0.0)
 CausticsEngineering.area(v1, v2, v3)
 
 fm = CausticsEngineering.FaceMesh(512, 512);

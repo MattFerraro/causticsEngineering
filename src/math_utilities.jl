@@ -35,7 +35,6 @@ Approximates the gradient of a scalar field.
 """
 function ∇(ϕ::AbstractMatrix{Float64})
     # x, y only represents the first and the second variables. No reference to graphical representations.
-
     ∇ϕx = zeros(Float64, size(ϕ))   # divergence on the right edge will be filled with zeros
     ∇ϕy = zeros(Float64, size(ϕ))   # divergence on bottom edge will be filled with zeros
 

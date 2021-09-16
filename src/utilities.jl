@@ -340,7 +340,7 @@ end
 """
 $(SIGNATURES)
 """
-area(t::Tuple{Vertex3D, Vertex3D, Vertex3D})  = area(t...)
+area(t::Tuple{Vertex3D,Vertex3D,Vertex3D}) = area(t...)
 
 """
 $(SIGNATURES)
@@ -354,8 +354,10 @@ has been shifted and flexed around.
 function get_lens_pixels_area(mesh::FaceMesh)
     height, width = size(mesh)
 
-    top_tri_area = area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
-    bot_tri_area = area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
+    top_tri_area =
+        area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
+    bot_tri_area =
+        area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
 
     total_area = top_tri_area + bot_tri_area
 
