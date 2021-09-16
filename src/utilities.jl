@@ -47,7 +47,7 @@ function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
 
     # surface_sq = (a + b + c) * (- a + b + c) * (a - b + c) * (a + b - c) / 16.0
     surface_sq = s * (s - a) * (s - b) * (s - c)
-    return surface_sq <= 1e-100 ? 1e-100 : sqrt(surface_sq)
+    return surface_sq <= 1e-100 ? 0.0 : sqrt(surface_sq)
 end
 
 
@@ -227,30 +227,13 @@ Base.size(mesh::FaceMesh) = mesh.size
 
 
 """
-$(TYPEDEF)
-"""
-struct Triangle
-    mesh::FaceMesh
-    points::Tuple{Int,Int,Int}
-
-    function Triangle(mesh::FaceMesh)
-        return Triangle(
-            mesh,
-            Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)),
-        )
-    end
-end
-
-
-
-"""
 $(SIGNATURES)
 
 Converts a triangle as a triplet of references to mesh vertices to a triplet of 3D coordinates.
 """
 function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:bottom})
     height, width = size(mesh)
-    max_distance_sq = ((height + 1) * (width + 1))^2
+    max_distance_squared = (height + 1)^2 + (width + 1)^2
 
     if 1 <= row <= height && 1 <= col <= width
         if side == :top
@@ -268,21 +251,21 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
         ϕ1 = mesh.corners.ϕ[t1_row, t1_col]
         vr1 = mesh.corners.vr[t1_row, t1_col]
         vc1 = mesh.corners.vc[t1_row, t1_col]
-        @assert r1^2 + c1^2 <= max_distance_sq "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
+        @assert r1^2 + c1^2 <= max_distance_squared "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
 
         r2 = mesh.corners.r[t2_row, t2_col]
         c2 = mesh.corners.c[t2_row, t2_col]
         ϕ2 = mesh.corners.ϕ[t2_row, t2_col]
         vr2 = mesh.corners.vr[t2_row, t2_col]
         vc2 = mesh.corners.vc[t2_row, t2_col]
-        @assert r2^2 + c2^2 <= max_distance_sq "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
+        @assert r2^2 + c2^2 <= max_distance_squared "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
 
         r3 = mesh.corners.r[t3_row, t3_col]
         c3 = mesh.corners.c[t3_row, t3_col]
         ϕ3 = mesh.corners.ϕ[t3_row, t3_col]
         vr3 = mesh.corners.vr[t3_row, t3_col]
         vc3 = mesh.corners.vc[t3_row, t3_col]
-        @assert r3^2 + c3^2 <= max_distance_sq "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
+        @assert r3^2 + c3^2 <= max_distance_squared "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
 
         p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
         p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
@@ -354,6 +337,10 @@ function area(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom})
     end
 end
 
+"""
+$(SIGNATURES)
+"""
+area(t::Tuple{Vertex3D, Vertex3D, Vertex3D})  = area(t...)
 
 """
 $(SIGNATURES)
@@ -367,28 +354,11 @@ has been shifted and flexed around.
 function get_lens_pixels_area(mesh::FaceMesh)
     height, width = size(mesh)
 
-    top_tri_area =
-        [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
-    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
-
-    bot_tri_area =
-        [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
-    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
-
+    top_tri_area = area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
+    bot_tri_area = area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
 
     total_area = top_tri_area + bot_tri_area
-    @assert 1.0 - 1e-4 < average(total_area) < 1.0 + 1e-4 """
 
-            solve_velocity_potential:
-                The total energy through the lens has more than 1% difference compared to 1.0 energy per pixel.
-                Total luminosity through lens: $(sum(lens_pixels_area))
-                Average luminosity through lens: $(average(lens_pixels_area))
-                Total luminosity caustics: $(sum(image))
-                Total luminosity error: $(sum(error_luminosity))
-                Maximum error: $(maximum(error_luminosity))")
-                Minimum error: $(minimum(error_luminosity))")
-                Iteration prefix: $(prefix)
-
-                """
-    return total_area
+    average_energy_per_pixel = average(total_area)
+    return total_area / average_energy_per_pixel
 end

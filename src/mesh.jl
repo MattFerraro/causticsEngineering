@@ -4,6 +4,12 @@ $(SIGNATURES)
 Given 3 points and their velocities, calculate the time `t` required to bring the area of that triangle to zero
 """
 function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
+    # If a triangle is too small, no move
+    if area(p1, p2, p3) < 1e-3
+        return 0.0
+    end
+
+
     # Three points A, B and C, with coordinates (x, y)
     # The area of a triangle is 1/2 * [ Ax (By - Cy) + Bx (Cy - Ay) + Cx (Ay - By)]
     # where each point of the triangle is where it will be after time t
@@ -32,21 +38,21 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
 
     # if a = 0, this is just a linear equation.
     if a == 0 && b != 0
-        return smallest_positive(-c / b, c / b)
+        return min(smallest_positive(-c / b, c / b), 2.0)
     else
         discriminant = b^2 - 4a * c
 
         # If there is a solution
         if discriminant >= 0
             d = sqrt(discriminant)
-            return smallest_positive((-b - d) / 2a, (-b + d) / 2a)
+            return min(smallest_positive((-b - d) / 2a, (-b + d) / 2a), 2.0)
         end
     end
     # There can be no solution if, after translation, B abd C move in parallel direction.
     # C will never end up on the line AB.
     # Very unlikely with Float64.
     # Negative numbers are filtered out when calculating the minimum jiggle ratio
-    return -1.0
+    return 0.0
 end
 
 find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])

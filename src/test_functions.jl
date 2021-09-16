@@ -1,3 +1,4 @@
+using CausticsEngineering
 using Test
 
 """
@@ -45,6 +46,8 @@ end
 
 
 
+
+
 function testAreaTriangle(x1, y1, x2, y2, x3, y3)
     a = sqrt((x2 - x1)^2 + (y2 - y1)^2)
     b = sqrt((x3 - x2)^2 + (y3 - y2)^2)
@@ -52,7 +55,7 @@ function testAreaTriangle(x1, y1, x2, y2, x3, y3)
     s = (a + b + c) / 2.0
 
     surface_sq = (a + b + c) * (-a + b + c) * (a - b + c) * (a + b - c) / 16.0
-    return surface_sq <= 1e-100 ? 1e-100 : surface_sq
+    return surface_sq <= 1e-100 ? 0.0 : surface_sq
 end
 
 function doTestAreaTriangle(N = 10_000)
@@ -77,9 +80,33 @@ end
         x3 ∈ 10_000 .* rand(10_000),
         y3 ∈ 10_000 .* rand(10_000)
 
-        @test testAreaTriangle(x1, y1, x2, y2, x3, y3) > 0.0
+        @test testAreaTriangle(x1, y1, x2, y2, x3, y3) >= 0.0
     end
 end
+
+@testset "More triangle area" begin
+    @test area(0, 1, 1 , 0, 0, 0)
+end
+
+
+v1 = CausticsEngineering.Vertex3D(0.0, 1.0, 0.0 , 0.0, 0.0)
+v2 = CausticsEngineering.Vertex3D(1.0, 0.0, 0.0 , 0.0, 0.0)
+v3 = CausticsEngineering.Vertex3D(0.0, 0.0, 0.0 , 0.0, 0.0)
+CausticsEngineering.area(v1, v2, v3)
+
+v1 = CausticsEngineering.Vertex3D(0.0, 2.0, 0.0 , 0.0, 0.0)
+v2 = CausticsEngineering.Vertex3D(2.0, 0.0, 0.0 , 0.0, 0.0)
+v3 = CausticsEngineering.Vertex3D(0.0, 0.0, 0.0 , 0.0, 0.0)
+CausticsEngineering.area(v1, v2, v3)
+
+fm = CausticsEngineering.FaceMesh(512, 512);
+fm.toptriangles[1, 1]
+CausticsEngineering.triangle3D(fm, 1, 1, :top)
+CausticsEngineering.area(CausticsEngineering.triangle3D(fm, 1, 1, :top)...)
+CausticsEngineering.area(CausticsEngineering.triangle3D(fm, 1, 1, :bottom)...)
+
+CausticsEngineering.area(CausticsEngineering.triangle3D(fm, 126, 13, :top)...)
+CausticsEngineering.area(CausticsEngineering.triangle3D(fm, 126, 13, :bottom)...)
 
 
 

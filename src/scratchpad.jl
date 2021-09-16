@@ -15,6 +15,7 @@ image = Images.load("./examples/personal/statue_of_liberty_3.jpg"); # Check curr
 
 image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/portrait.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 
 mesh, imageBW = engineer_caustics(image; clamp_correction = true);

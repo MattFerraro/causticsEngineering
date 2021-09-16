@@ -24,7 +24,7 @@ function smallest_positive(x1::Float64, x2::Float64)
     (x1 >= 0.0 && x2 < 0.0) && return x1
     (x1 < 0.0 && x2 >= 0.0) && return x2
     (x1 >= 0.0 && x2 >= 0.0) && return min(x1, x2)
-    return -1.0
+    return 0.0
 end
 
 
@@ -33,16 +33,14 @@ $(SIGNATURES)
 
 Approximates the gradient of a scalar field.
 """
-function ∇(ϕ::Matrix{Float64})
+function ∇(ϕ::AbstractMatrix{Float64})
     # x, y only represents the first and the second variables. No reference to graphical representations.
 
     ∇ϕx = zeros(Float64, size(ϕ))   # divergence on the right edge will be filled with zeros
     ∇ϕy = zeros(Float64, size(ϕ))   # divergence on bottom edge will be filled with zeros
 
-    ∇ϕx[begin:end-1, begin:end-1] =
-        ϕ[begin+1:end, begin:end-1] .- ϕ[begin:end-1, begin:end-1]
-    ∇ϕy[begin:end-1, begin:end-1] =
-        ϕ[begin:end-1, begin+1:end] .- ϕ[begin:end-1, begin:end-1]
+    @. ∇ϕx[begin:end-1, :] = ϕ[begin+1:end, :] - ϕ[begin:end-1, :]
+    @. ∇ϕy[:, begin:end-1] = ϕ[:, begin+1:end] - ϕ[:, begin:end-1]
 
     fill_borders!(∇ϕx, 0.0)
     fill_borders!(∇ϕy, 0.0)
@@ -71,7 +69,7 @@ function laplacian(ϕ::AbstractMatrix{Float64})
 
     # The Laplace operator can be calculated by convolving a kernel.
     # See https://www.wikiwand.com/en/Discrete_Laplace_operator for simple example in 2D
-    kernel = ([[0.0 1.0 0.0]; [1.0 -4.0 1.0]; [0.0 1.0 0.0]])
+    kernel = [[0.0 1.0 0.0]; [1.0 -4.0 1.0]; [0.0 1.0 0.0]]
 
     # Convolution
     ∇²ϕ = zeros(Float64, height, width)
