@@ -251,21 +251,21 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
         ϕ1 = mesh.corners.ϕ[t1_row, t1_col]
         vr1 = mesh.corners.vr[t1_row, t1_col]
         vc1 = mesh.corners.vc[t1_row, t1_col]
-        @assert r1^2 + c1^2 <= max_distance_squared "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
+        # @assert r1^2 + c1^2 <= max_distance_squared "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
 
         r2 = mesh.corners.r[t2_row, t2_col]
         c2 = mesh.corners.c[t2_row, t2_col]
         ϕ2 = mesh.corners.ϕ[t2_row, t2_col]
         vr2 = mesh.corners.vr[t2_row, t2_col]
         vc2 = mesh.corners.vc[t2_row, t2_col]
-        @assert r2^2 + c2^2 <= max_distance_squared "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
+        # @assert r2^2 + c2^2 <= max_distance_squared "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
 
         r3 = mesh.corners.r[t3_row, t3_col]
         c3 = mesh.corners.c[t3_row, t3_col]
         ϕ3 = mesh.corners.ϕ[t3_row, t3_col]
         vr3 = mesh.corners.vr[t3_row, t3_col]
         vc3 = mesh.corners.vc[t3_row, t3_col]
-        @assert r3^2 + c3^2 <= max_distance_squared "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
+        # @assert r3^2 + c3^2 <= max_distance_squared "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
 
         p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
         p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)

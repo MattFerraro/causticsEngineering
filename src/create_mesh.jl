@@ -3,7 +3,7 @@
 $(SIGNATURES)
 
 """
-function engineer_caustics(source_image; clamp_correction = true)
+function engineer_caustics(source_image)
     imageBW = Float64.(Gray.(source_image))
 
 
@@ -41,11 +41,7 @@ function engineer_caustics(source_image; clamp_correction = true)
 
     # abs((error_luminosity - old_error_luminosity) / old_error_luminosity) > 0.0 &&
     # abs((max_update - old_max_update) / old_max_update) > 0.0 &&
-    while (
-        abs(max_update) > 1e-5 &&
-        error_luminosity > 1e-5 &&
-        iteration_count < 10_000
-        )
+    while (abs(max_update) > 1e-5 && error_luminosity > 1e-5 && iteration_count < 10)
         iteration_count += 1
 
         println(
@@ -54,12 +50,8 @@ function engineer_caustics(source_image; clamp_correction = true)
 
         old_max_update = max_update
         old_error_luminosity = error_luminosity
-        max_update, error_luminosity = solve_velocity_potential!(
-            mesh,
-            imageBW,
-            "it$(iteration_count)";
-            clamp_correction = clamp_correction,
-        )
+        max_update, error_luminosity =
+            solve_velocity_potential!(mesh, imageBW, "it$(iteration_count)")
         print(
             "Vertical move max update = $(max_update)   --  Mean error luminosity = $(error_luminosity)\n",
         )
@@ -67,14 +59,11 @@ function engineer_caustics(source_image; clamp_correction = true)
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
 
-    ϕ, max_update =
-        move_horizontally(mesh, imageBW; f = Focal_Length, clamp_correction = true)
-    mesh.corners.ϕ .= ϕ
+    mesh.corners.ϕ, max_update = move_horizontally(mesh, imageBW; f = Focal_Length)
     println("\t Horizontal max update = $(max_update)")
 
     # Move the around a nil average.
-    mean_ϕ = average(mesh.corners.ϕ)
-    mesh.corners.ϕ = mesh.corners.ϕ .- mean_ϕ
+    mesh.corners.ϕ .-= average(mesh.corners.ϕ)
 
     return mesh, imageBW
 end
@@ -87,31 +76,17 @@ $(SIGNATURES)
 ϕ is the _velocity potential_. The velocity represents the direction towards which the mesh vertices should move.
 Zones of high luminosity should be covered with more triangles and should attract more vertices.
 """
-function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
+function solve_velocity_potential!(mesh, image, prefix)
     # Keep that to track how much progress is made
     mesh_ϕ = copy(mesh.corners.ϕ)
 
     # Get the area of each individual pixel as stretch/shrunk on the lens. Area = energy.
     # _FENCES_SIZED_
     lens_pixels_area = get_lens_pixels_area(mesh)
-    @assert test_average_absolute(lens_pixels_area) """
-
-            solve_velocity_potential:
-                area_distorted_corners values seem too large
-                $(maximum(lens_pixels_area)) / $(minimum(lens_pixels_area))
-
-                """
 
     # Positive error => the triangle needs to shrink (less light)
     error_luminosity = Float64.(lens_pixels_area - image)
     error_luminosity = error_luminosity .- average(error_luminosity)
-    @assert test_average_absolute(error_luminosity) """
-
-            solve_velocity_potential: error_luminosity values seem too large
-                max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
-
-            """
-
 
     # Save the loss image as a png
     println(
@@ -133,14 +108,10 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
     old_max_update = 2 * start_max_update
     iteration_count = 0
 
-    while (
-        abs(max_update) > 1e-5 &&
-        iteration_count <= 1_000
-    )
+    while (abs(max_update) > 1e-5 && iteration_count < 1)
         iteration_count += 1
         old_max_update = max_update
 
-        iteration_count % 10 == 0 && println("Converging for intensity: $(max_update)")
         iteration_count % 10 == 0 && println(
             """
 
@@ -151,32 +122,13 @@ function solve_velocity_potential!(mesh, image, prefix; clamp_correction = true)
         """,
         )
 
+        # Re-level ϕ around its average. It doesn't matter for potential fields
+        mesh.corners.ϕ .-= average(mesh.corners.ϕ)
+
         # Solve the Poisson equation where the divergence of the gradient of ϕ is equal to the luminosity error.
         # High error => Too much luminosity.
-        ϕ, max_update = propagate_poisson(
-            mesh.corners.ϕ,
-            error_luminosity;
-            clamp_correction = clamp_correction,
-        )
-
-        mesh.corners.ϕ[:, :] .= ϕ[:, :]
-        @assert test_average_absolute(mesh.corners.ϕ) """
-
-                solve_velocity_potential: ϕ values seem too large
-                    iteration count = $(iteration_count)
-                    max/min mesh.corners.ϕ = $(maximum(mesh.corners.ϕ)) / $(minimum(mesh.corners.ϕ))
-
-                    max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
-                    max_update = $(max_update)
-
-                    """
+        mesh.corners.ϕ, max_update = propagate_poisson(mesh.corners.ϕ, error_luminosity)
     end
-
-    mesh.corners.ϕ[:, :] .-= average(mesh.corners.ϕ)
-
-    # Relevel ϕ around its average. It doesn't matter for potential fields
-    mean_ϕ = average(mesh.corners.ϕ)
-    mesh.corners.ϕ .-= mean_ϕ
 
     println(
         """
@@ -202,7 +154,7 @@ end
 """
 $(SIGNATURES)
 """
-function move_horizontally(mesh::FaceMesh, image; f = Focal_Length, clamp_correction = true)
+function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
 
     # height indexes rows, width indexes columns
     height, width = size(mesh)
@@ -250,33 +202,10 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length, clamp_correc
     # Normalise
     divergence_direction .-= average(divergence_direction)
 
-    @assert test_average_absolute(divergence_direction) """
-
-            ALERT: horiz.
-                Δ divergence_direction seem too large
-                max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))
-
-                """
-
-    ##
-    ## CHECK SIGN!!!
-    ##
     max_update = Inf
     while max_update >= 1e-5
-        true_H, max_update = propagate_poisson(
-            true_H,
-            divergence_direction;
-            clamp_correction = clamp_correction,
-        )
+        true_H, max_update = propagate_poisson(true_H, divergence_direction)
     end
-    @assert test_average_absolute(true_H) """
-
-        ALERT:
-            horiz. Δ corner_heights is too large
-            max/min corner_heights = $(maximum(true_H)) / $(minimum(true_H))
-
-            """
-
     println("Convergence horiz. Δ stopped with max_update of $(max_update)")
 
     return true_H, max_update
@@ -306,45 +235,18 @@ In order of how to think about the flow of the program:
   should be.
 
 """
-function propagate_poisson(
-    ϕ::Matrix{Float64},
-    ∇²ϕ::Matrix{Float64};
-    clamp_correction = true,
-)
+function propagate_poisson(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
 
     # Ensure that border conditions are as they should (= 0.0)
     fill_borders!(∇²ϕ, 0.0)
-    @assert test_average_absolute(ϕ) """
-
-        Relaxation:
-            ϕ values seem too large
-            max/min ∇ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
-            max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
-
-            """
-
-    @assert test_average_absolute(∇²ϕ) """
-
-        Relaxation:
-            ∇²ϕ values seem too large
-            max/min ∇²ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
-            max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
-
-            """
-
-    @assert any(isnan.(ϕ)) == false "Relaxation: calling with a ϕ that contains NaN!!"
-    @assert any(isnan.(∇²ϕ)) == false "Relaxation: calling with a ∇²ϕ that contains NaN!!"
-
 
     ##################################################################################################################
     # From the velocity potential field ϕ, we calculate its gradient (the velocity), then its divergence.
     # This is then compared to the intensity loss
 
-
     # Laplacian
     # Lϕ represent the approximation of the Laplacian of ϕ (second-order value)
     Lϕ = laplacian(ϕ)
-
 
     # In the case of the velocity potential, δ is the difference between the divergence of the luminosity error
     # and the current one for the current field ϕ (divergence of its gradient).
@@ -352,41 +254,12 @@ function propagate_poisson(
     # High luminosity error ∇²ϕ means that the triangles are too bright = too large.
     # The Laplacian Lϕ has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
     δ = Lϕ - ∇²ϕ
-    @assert test_average_absolute(δ) """
-
-        Relaxation:
-            difference between luminosity error and estimated Laplacian seem too large
-            max/min δ = $(maximum(δ)) / $(minimum(δ))
-            max/min target Lϕ = $(maximum(Lϕ)) / $(minimum(Lϕ))
-            max/min ϕ = $(maximum(ϕ)) / $(minimum(ϕ))
-
-            """
 
     # Default correction ratio to adjust δ is ω / 4.0
-    ω_clamped = ω / 4.0
     δ *= ω / 4.0
 
     # We limit the changes of the potential to a maximum
-    max_correction_max = 1e12
-    max_correction_μ = 100.0
-    abs_δ = abs.(δ)
-    maximum_δ = maximum(abs_δ)
-
-
-    # A correction factor is calculated to limit too wide changes on the field ϕ.
-    # if clamp_correction
-    #     μ_δ = average(abs_δ)
-
-    #     if maximum_δ > max_correction_max
-    #         ω_clamped = min(ω_clamped, max_correction_max / maximum_δ)
-    #         # println(
-    #         #     "Propagation clamped for maximum_δ.  $(maximum_δ) > $(max_correction_max)",
-    #         # )
-    #     elseif μ_δ > max_correction_μ
-    #         ω_clamped = min(ω_clamped, max_correction_μ / μ_δ)
-    #         # println("Propagation clamped for average δ.  $(μ_δ) > $(max_correction_μ)")
-    #     end
-    # end
+    maximum_δ = maximum(abs.(δ))
 
     # In the case of the velocity potential,
     # if δ > 0, the Laplacian is too high at that point (∇²ϕ is too low).
@@ -402,17 +275,7 @@ function propagate_poisson(
     # => either decrease the values of the potential around that point, or increase the value of the potential at that point.
     # => Increase the value of ϕ at that point means a positive change when δ > 0.
     # δ > 0 => correction of the SAME sign.
-    @. ϕ[1:N_Pixel_Height, 1:N_Pixel_Width] +=
-        ω_clamped * δ[1:N_Pixel_Height, 1:N_Pixel_Width]
-    @assert !any(isnan.(ϕ)) """
-
-        Relaxation:
-            Updated ϕ contains NaN!!
-
-        """
-
-    # max_update = ω_clamped * maximum_δ
-
+    @. ϕ[1:N_Pixel_Height, 1:N_Pixel_Width] += δ[1:N_Pixel_Height, 1:N_Pixel_Width]
 
     return ϕ, maximum_δ
 end
@@ -435,11 +298,6 @@ function march_mesh!(mesh::FaceMesh)
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain
     # of the same size.
-    #
-    # CHECK - SIGN?
-    #
-    mesh.corners.vr .= -∇ϕᵤ
-    mesh.corners.vc .= -∇ϕᵥ
 
     # Just in case...
     reset_border_values!(mesh.corners)
@@ -452,6 +310,9 @@ function march_mesh!(mesh::FaceMesh)
 
     # Get the time, at that velocity, for the area of the triangle to be nil.
     # We are only interested by positive values to only move in the direction of the gradient
+    mesh.corners.vr = -∇ϕᵤ
+    mesh.corners.vc = -∇ϕᵥ
+
     list_triangles = vcat(
         [
             triangle3D(mesh, row, col, :top) for row ∈ 1:N_Pixel_Height,
@@ -463,23 +324,11 @@ function march_mesh!(mesh::FaceMesh)
         ],
     )
 
-    list_maximum_t =
-        [time for time ∈ find_maximum_t.(list_triangles) if !isnothing(time) && !isnan(time) && time > 0.0]
+    list_maximum_t = [time for time ∈ find_maximum_t.(list_triangles)]
+    δ = minimum(list_maximum_t) / 2.0
 
-    if !isempty(list_maximum_t)
-        min_positive_t = minimum(list_maximum_t)
-
-        # # Maximum movement along either coordinate
-        # max_shift = max(maximum(abs.(∇ϕᵤ)), maximum(abs.(∇ϕᵥ)))
-
-        # # No shift more than 10 pixels
-        # max_pixel_move = 10.0
-        δ = min_positive_t / 2.0
-
-        δ = min_positive_t / 2.0
-        mesh.corners.r += δ * ∇ϕᵤ
-        mesh.corners.c += δ * ∇ϕᵥ
-    end
+    mesh.corners.r += δ * ∇ϕᵤ
+    mesh.corners.c += δ * ∇ϕᵥ
 
     # Reset the border at the fixed values fixed coordinates.
     reset_border_values!(mesh.corners)
@@ -493,11 +342,6 @@ function march_mesh!(mesh::FaceMesh)
 
             """)
 
-    @assert 1 - 1e-4 < average(get_lens_pixels_area(mesh)) < 1 + 1e-4 """
 
-            march_mesh!: average energy per pixel is too different from 1.0
-                Total energy per pixel: $(average(get_lens_pixels_area(mesh)))
-
-                """
     return nothing
 end

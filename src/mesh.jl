@@ -46,7 +46,7 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
     # C will never end up on the line AB.
     # Very unlikely with Float64.
     # If nothing found, no move
-    return nothing
+    return Inf
 end
 
 find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])
