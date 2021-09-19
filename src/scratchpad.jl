@@ -128,3 +128,29 @@ using MeshViz
 import GLMakie
 MeshViz.viz(cat_mesh3D)
 MeshViz.viz(cat_mesh2D)
+
+
+
+
+
+# engineer_caustics
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+imageBW = Float64.(Gray.(image));
+imageBW /= average(imageBW);
+height, width = size(imageBW)
+mesh = CausticsEngineering.FaceMesh(height, width);
+
+# solve_velocity_potential
+mesh.corners.ϕ
+fill!(mesh.corners.ϕ, 0.);
+
+height, width = size(mesh.corners.ϕ)
+
+area_distorted_corners = CausticsEngineering.get_area_corners(mesh)
+error_luminosity = Float64.(area_distorted_corners - imageBW)
+error_luminosity = error_luminosity .- average(error_luminosity)
+
+sum(error_luminosity)
+average(error_luminosity)
+average_absolute(error_luminosity)
+

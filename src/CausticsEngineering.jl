@@ -38,6 +38,9 @@ export
     FieldVertex3D,
     FaceMesh,
 
+    # Math
+    average, average_absolute,
+
     # Mesh
     create_solid,
     create_solid_as_dict,

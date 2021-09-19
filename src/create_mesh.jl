@@ -24,12 +24,8 @@ function engineer_caustics(source_image)
     mesh = FaceMesh(height, width)
 
     # The total energy going through the lens is equal to the amount of energy on the caustics
-    total_energy_lens = height * width * 1     # 1 unit of energy per pixel
-    total_energy_caustics = sum(imageBW)
-    correction_ratio = sum(imageBW) / (width * height)
-
     # imageBW is normalised to the same (sort of) _energy_ as the original image.
-    imageBW = imageBW ./ correction_ratio
+    imageBW /= average(imageBW)
 
     # start_max_update has no particular meing.
     # It is basically the initial max_update. But then is used to initialise other variables so that
@@ -43,10 +39,10 @@ function engineer_caustics(source_image)
     iteration_count = 0
 
     while (
-        abs(max_update) > 0.0 &&
-        abs((error_luminosity - old_error_luminosity) / old_error_luminosity) > 0.01 &&
+        abs(max_update) > 1e-3 &&
+        abs((error_luminosity - old_error_luminosity) / old_error_luminosity) > 0.00 &&
         abs((max_update - old_max_update) / old_max_update) > 0.0 &&
-        iteration_count < 10_000
+        iteration_count < 5_000
     )
         iteration_count += 1
 
@@ -85,11 +81,16 @@ $(SIGNATURES)
 Zones of high luminosity should be covered with more triangles and should attract more vertices.
 """
 function solve_velocity_potential!(mesh, image, prefix)
+
+    fill!(mesh.corners.ϕ, 0.)
+    height, width = size(mesh.corners.ϕ)
+
+
     # Remember mesh is (will be) `grid_definition x grid_definition` just like the image
     # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
 
     area_distorted_corners = get_area_corners(mesh)
-    @assert average_absolute(area_distorted_corners) """
+    @assert test_average_absolute(area_distorted_corners) """
 
            solve_velocity_potential: area_distorted_corners values seem too large
                $(maximum(area_distorted_corners)) / $(minimum(area_distorted_corners))
@@ -98,7 +99,9 @@ function solve_velocity_potential!(mesh, image, prefix)
 
     # Positive error => the triangle needs to shrink (less light)
     error_luminosity = Float64.(area_distorted_corners - image)
-    @assert average_absolute(error_luminosity) """
+    error_luminosity .-= average(error_luminosity)
+
+    @assert test_average_absolute(error_luminosity) """
 
             solve_velocity_potential: error_luminosity values seem too large
                 max/min error_luminosity = $(maximum(error_luminosity)) / $(minimum(error_luminosity))
@@ -129,8 +132,8 @@ function solve_velocity_potential!(mesh, image, prefix)
     new_divergence_mean = 1_000.0
 
     while (
-        abs(max_update) > 0.0 &&
-        abs((max_update - old_max_update) / old_max_update) >= 0.01 &&
+        abs(max_update) > 1e-3 &&
+        abs((max_update - old_max_update) / old_max_update) >= 0.0 &&
         new_divergence_max >= 0.0
     )
 
@@ -155,7 +158,7 @@ function solve_velocity_potential!(mesh, image, prefix)
         ϕ, max_update = propagate_poisson(mesh.corners.ϕ, error_luminosity)
         mesh.corners.ϕ[:, :] .= ϕ[:, :]
 
-        @assert average_absolute(mesh.corners.ϕ) """
+        @assert test_average_absolute(mesh.corners.ϕ) """
 
                 solve_velocity_potential: ϕ values seem too large
                     iteration count = $(iteration_count)
@@ -255,7 +258,7 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
     # divergence_direction = zeros(Float64, size(div_row))
     # divergence_direction is _FENCES_SIZED_
     divergence_direction = div_row + div_col
-    @assert average_absolute(divergence_direction) """
+    @assert test_average_absolute(divergence_direction) """
 
             ALERT: horiz. Δ divergence_direction seem too large
             max/min = $(maximum(divergence_direction)) / $(minimum(divergence_direction))
@@ -263,7 +266,7 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
 
     true_H, max_update =
         propagate_poisson(true_H, -divergence_direction; clamp_correction = false)
-    @assert average_absolute(true_H) """
+    @assert test_average_absolute(true_H) """
 
         ALERT: horiz. Δ corner_heights is too large
         max/min corner_heights = $(maximum(true_H)) / $(minimum(true_H))
@@ -306,7 +309,7 @@ function propagate_poisson(
 
     # Ensure that border conditions are as they should
     fill_borders!(∇²ϕ, 0.0)
-    @assert average_absolute(ϕ) """
+    @assert test_average_absolute(ϕ) """
 
         Relaxation: ϕ values seem too large
             max/min ∇ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
@@ -314,7 +317,7 @@ function propagate_poisson(
 
             """
 
-    @assert average_absolute(∇²ϕ) """
+    @assert test_average_absolute(∇²ϕ) """
 
         Relaxation: ∇²ϕ values seem too large
             max/min ∇²ϕ = $(maximum(∇²ϕ)) / $(minimum(∇²ϕ))
@@ -351,7 +354,7 @@ function propagate_poisson(
     # High intensity loss ∇²ϕ means that the triangles are too bright, too large.
     # This has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
     δ = Lϕ - ∇²ϕ
-    @assert average_absolute(δ) """
+    @assert test_average_absolute(δ) """
 
         Relaxation: difference between intensity loss and estimated Laplacian seem too large
             max/min δ = $(maximum(δ)) / $(minimum(δ))
@@ -374,14 +377,14 @@ function propagate_poisson(
         max_correction_μ = 5.0
         max_correction_in_between = 10.0
 
-        if maximum_δ > max_correction_max
-            correction_ratio = min(correction_ratio, max_correction_max / maximum_δ)
-        elseif μ_δ > max_correction_μ
-            correction_ratio = min(correction_ratio, max_correction_μ / μ_δ)
-        elseif (μ_δ + maximum_δ) / 2 > max_correction_in_between
-            correction_ratio =
-                min(correction_ratio, max_correction_in_between / ((μ_δ + maximum_δ) / 2))
-        end
+        # if maximum_δ > max_correction_max
+        #     correction_ratio = min(correction_ratio, max_correction_max / maximum_δ)
+        # elseif μ_δ > max_correction_μ
+        #     correction_ratio = min(correction_ratio, max_correction_μ / μ_δ)
+        # elseif (μ_δ + maximum_δ) / 2 > max_correction_in_between
+        #     correction_ratio =
+        #         min(correction_ratio, max_correction_in_between / ((μ_δ + maximum_δ) / 2))
+        # end
     end
 
     # if δ > 0, the intensity loss is too high, or the Laplacian is too high at that point.
