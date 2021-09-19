@@ -19,7 +19,7 @@ function engineer_caustics(source_image)
     mesh = FaceMesh(N_Pixel_Height, N_Pixel_Width)
 
     # imageBW is normalised to the same (sort of) _energy_ as the original image.
-    imageBW ./= average_energy_per_pixel
+    imageBW /= average(imageBW)
 
     max_update = Inf
     counter = 0
@@ -80,28 +80,27 @@ function solve_velocity_potential!(mesh, image, prefix)
                 $(field_summary(error_luminosity, "luminosity error"))
                 """)
 
+
     max_update = Inf
-    counter = 0
-    while (abs(max_update) > 1e-5 && counter < 5_000)
-        counter += 1
-        counter % 500 == 0 && println(
-            """ solve_velocity_potential! during loop at count $(counter) with max_update = $(round(max_update, sigdigits=4)):
+    old_update = Inf
+    for i ∈ 1:typemax(Int64)
+        old_update = max_update
+        max_update = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity)
+        i % 500 == 0 && println(
+            """ solve_velocity_potential! during loop at count $(i) with max_update = $(round(max_update, sigdigits=4)):
                     $(field_summary(mesh.corners.ϕ, "mesh.corners.ϕ"))
             """,
         )
 
-        # Re-level ϕ around its average. It doesn't matter for potential fields
-        # mesh.corners.ϕ .-= average(mesh.corners.ϕ)
-
-        # Solve the Poisson equation tp converge the divergence of the gradient of ϕ towards the luminosity error.
-        max_update = propagate_poisson!(mesh.corners.ϕ, error_luminosity)
+        if abs(old_update - max_update) <= 1e-6 || abs(max_update) <= 1e-4
+                println(""" solve_velocity_potential! at count $(i) with
+                                $(field_summary(error_luminosity, "luminosity error"))
+                                $(field_summary(mesh.corners.ϕ, "mesh.corners.ϕ"))
+                                max_update = $(max_update)
+                                """)
+                break
+        end
     end
-
-    println(""" solve_velocity_potential! stopped at step $(counter) with
-                    $(field_summary(error_luminosity, "luminosity error"))
-                    $(field_summary(mesh.corners.ϕ, "mesh.corners.ϕ"))
-                    max_update = $(max_update)
-        """)
 
     # Now we need to march the mesh row,col corner locations according to this gradient.
     march_mesh!(mesh)
@@ -160,13 +159,16 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
     divergence_direction = div_row + div_col
     # divergence_direction .-= average(divergence_direction)
 
+
     max_update = Inf
-    counter = 0
-    while max_update >= 1e-5
-        counter += 1
-        max_update = propagate_poisson!(true_H, divergence_direction)
-        counter % 100 && println("Convergence horiz. Δ max update = $(max_update)")
+    old_update = Inf
+    for i ∈ 1:typemax(Int64)
+        old_update = max_update
+        max_update = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity)
+        i % 100 == 0 && println("Convergence horiz. Δ max update = $(max_update)")
+        (abs(old_update - max_update) <= 1e-6 || abs(max_update) <= 1e-4) && break
     end
+
     println("Convergence horiz. Δ stopped with max_update of $(max_update) at counter = $(counter)")
 
     return true_H, max_update
@@ -203,26 +205,60 @@ function propagate_poisson!(ϕ::Matrix{Float64}, ∇²ϕ::Matrix{Float64})
     height, width = size(∇²ϕ)
     fill_borders!(∇²ϕ, 0.0)
 
-    ##################################################################################################################
-    # From the velocity potential field ϕ, we calculate its gradient (the velocity), then its divergence.
-    # This is then compared to the intensity loss
-    max_δ = 0.0
-    for row ∈ 1:height, col ∈ 1:width
-        ∇²ϕ_est =
-            ϕ[max(1, row - 1), col] +
-            ϕ[min(height, row + 1), col] +
-            ϕ[row, max(1, col - 1)] +
-            ϕ[row, min(width, col + 1)] - 4.0 * ϕ[row, col]
+    # Laplacian
+    # Lϕ represent the approximation of the Laplacian of ϕ (second-order value)
+    Lϕ = laplacian(ϕ)
 
-        δ = ∇²ϕ_est - ∇²ϕ[row, col]
-        δ /= 8.0
+    # In the case of the velocity potential, δ is the difference between the divergence of the luminosity error
+    # and the current one for the current field ϕ (divergence of its gradient).
 
-        ϕ[row, col] += δ
+    # High luminosity error ∇²ϕ means that the triangles are too bright = too large.
+    # The Laplacian Lϕ has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
+    δ = Lϕ - ∇²ϕ
 
-        max_δ = max(max_δ, abs(δ))
-    end
+    # Default correction ratio to adjust δ is ω / 4.0
+    δ *= ω / 4.0
 
-    return max_δ
+    # We limit the changes of the potential to a maximum
+    maximum_δ = maximum(abs.(δ))
+
+    # In the case of the velocity potential,
+    # if δ > 0, the Laplacian is too high at that point (∇²ϕ is too low).
+
+    # To decrease the Laplacian ∇²ϕ, note that ∇² is a divergence (of a gradient) that represents net flow going outside.
+    #
+    # Decrease the Laplacian
+    # => decrease a divergence
+    # => decrease flow towards outside
+    #
+    # The flow is a gradient of the potential ϕ.
+    # => decrease flow towards outside
+    # => either decrease the values of the potential around that point, or increase the value of the potential at that point.
+    # => Increase the value of ϕ at that point means a positive change when δ > 0.
+    # δ > 0 => correction of the SAME sign.
+    ϕ[1:end-1, 1:end-1] .+= δ
+    ϕ .+= average(δ)
+
+    # ##################################################################################################################
+    # # From the velocity potential field ϕ, we calculate its gradient (the velocity), then its divergence.
+    # # This is then compared to the intensity loss
+    # max_δ = 0.0
+    # for row ∈ 1:height, col ∈ 1:width
+    #     ∇²ϕ_est =
+    #         ϕ[max(1, row - 1), col] +
+    #         ϕ[min(height, row + 1), col] +
+    #         ϕ[row, max(1, col - 1)] +
+    #         ϕ[row, min(width, col + 1)] - 4.0 * ϕ[row, col]
+
+    #     δ = ∇²ϕ_est - ∇²ϕ[row, col]
+    #     δ /= 2.0
+
+    #     ϕ[row, col] += δ
+
+    #     max_δ = max(max_δ, abs(δ))
+    # end
+
+    return maximum_δ
 end
 
 
@@ -253,20 +289,38 @@ function march_mesh!(mesh::FaceMesh)
 
     height, width = size(mesh)
 
-    for row ∈ 1:height, col ∈ 1:width
-        list_triangles = [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom) ]
+    list_triangles = vcat(
+        [
+            CausticsEngineering.triangle3D(mesh, row, col, :top) for row ∈ 1:height, col ∈ 1:width
+        ],
+        [
+            CausticsEngineering.triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width
+        ],
+    )
 
-        if !isempty(list_triangles)
-            list_maximum_t = [time for time ∈ find_maximum_t.(list_triangles) if !isnothing(time)]
+    list_maximum_t = [time for time ∈ CausticsEngineering.find_maximum_t.(list_triangles) if !isnothing(time) && time > 0.]
+    minimum(list_maximum_t)
+    maximum(list_maximum_t)
 
-            if !isempty(list_maximum_t)
-                δ = minimum(list_maximum_t) / 8.0
+    δ = minimum(list_maximum_t) / 2.0
 
-                mesh.corners.r[row, col] -= δ * ∇ϕᵤ[row, col]
-                mesh.corners.c[row, col]  -= δ * ∇ϕᵥ[row, col]
-            end
-        end
-    end
+    mesh.corners.r += δ * ∇ϕᵤ
+    mesh.corners.c += δ * ∇ϕᵥ
+
+    # for row ∈ 1:height, col ∈ 1:width
+    #     list_triangles = [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom) ]
+
+    #     if !isempty(list_triangles)
+    #         list_maximum_t = [time for time ∈ find_maximum_t.(list_triangles) if !isnothing(time)]
+
+    #         if !isempty(list_maximum_t)
+    #             δ = minimum(list_maximum_t) / 8.0
+
+    #             mesh.corners.r[row, col] -= δ * ∇ϕᵤ[row, col]
+    #             mesh.corners.c[row, col]  -= δ * ∇ϕᵥ[row, col]
+    #         end
+    #     end
+    # end
 
     println("""
         March mesh:

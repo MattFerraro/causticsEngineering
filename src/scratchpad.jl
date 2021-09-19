@@ -194,6 +194,125 @@ Luminosity:
 
 
 
+##########################################################
+## STEPPING
+
+using Revise, Debugger
+using Images, Plots;
+gr();
+
+using CausticsEngineering
+
+
+# engineer_caustics
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+imageBW = Float64.(Gray.(image));
+imageBW /= average(imageBW);
+sum(imageBW)
+
+height, width = size(imageBW)
+mesh = CausticsEngineering.FaceMesh(height, width);
+
+# solve_velocity_potential
+mesh.corners.ϕ
+fill!(mesh.corners.ϕ, 0.);
+
+# height, width = size(mesh.corners.ϕ)
+
+area_distorted_corners = CausticsEngineering.get_lens_pixels_area(mesh);
+error_luminosity = Float64.(area_distorted_corners - imageBW);
+sum(error_luminosity)
+average(error_luminosity)
+average_absolute(error_luminosity)
+
+error_luminosity = error_luminosity .- average(error_luminosity);
+sum(error_luminosity)
+average(error_luminosity)
+average_absolute(error_luminosity)
+
+Lϕ = CausticsEngineering.laplacian(mesh.corners.ϕ);
+ls = sign(sum(Lϕ))
+la = sign(average(Lϕ))
+δ = Lϕ - error_luminosity;
+δ ./= 4.0;
+ds = sign(sum(δ))
+sa = sign(average(δ))
+println()
+# average(δ)
+# average_absolute(δ)
+# println(maximum(abs.(δ)))
+mesh.corners.ϕ[1:end-1, 1:end-1] .+= δ;
+mesh.corners.ϕ .-= average(mesh.corners.ϕ);
+
+
+sum(mesh.corners.ϕ)
+average(mesh.corners.ϕ)
+average_absolute(mesh.corners.ϕ)
+
+
+sign(sum(δ))
+
+
+CausticsEngineering.save_plot_scalar_field!(error_luminosity, "trace_1", imageBW)
+
+max_update = Inf
+old_update = Inf
+
+any(isnan.(error_luminosity))
+
+any(isnan.(mesh.corners.r))
+any(isnan.(mesh.corners.c))
+any(isnan.(mesh.corners.vr))
+any(isnan.(mesh.corners.vc))
+
+any(isnan.(mesh.corners.ϕ))
+
+i = 0
+begin
+    i += 1
+    old_update = max_update
+    max_update = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity)
+    # i % 100 == 0 && println(max_update)
+    # (abs(old_update - max_update) <= 1e-6 || abs(max_update) <= 1e-4) && break
+end
+
+max_update
+old_update
+
+
+f()
+
+
+∇ϕᵤ, ∇ϕᵥ = CausticsEngineering.∇(mesh.corners.ϕ)
+
+sum(∇ϕᵤ)
+average(∇ϕᵤ)
+average_absolute(∇ϕᵤ)
+
+
+height, width = size(imageBW)
+mesh.corners.vr .= -∇ϕᵤ
+mesh.corners.vc .= -∇ϕᵥ
+list_triangles = vcat(
+    [
+        CausticsEngineering.triangle3D(mesh, row, col, :top) for row ∈ 1:height, col ∈ 1:width
+    ],
+    [
+        CausticsEngineering.triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width
+    ],
+)
+
+list_maximum_t = [time for time ∈ CausticsEngineering.find_maximum_t.(list_triangles) if !isnothing(time) && time > 0.]
+minimum(list_maximum_t)
+maximum(list_maximum_t)
+
+δ = minimum(list_maximum_t) / 2.0
+
+mesh.corners.r += δ * ∇ϕᵤ
+mesh.corners.c += δ * ∇ϕᵥ
+
+
+end
 
 
 
@@ -201,13 +320,4 @@ Luminosity:
 
 
 
-
-
-
-
-
-
-
-
-
-
+nothing;
