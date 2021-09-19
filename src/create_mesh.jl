@@ -18,11 +18,8 @@ function engineer_caustics(source_image)
     # cover each image corner with a triangle.
     mesh = FaceMesh(N_Pixel_Height, N_Pixel_Width)
 
-    # The total energy going through the lens is equal to the amount of energy on the caustics
-    average_energy_per_pixel = average(imageBW)
-
     # imageBW is normalised to the same (sort of) _energy_ as the original image.
-    imageBW = imageBW / average_energy_per_pixel
+    imageBW ./= average_energy_per_pixel
 
     max_update = Inf
     counter = 0
@@ -71,7 +68,7 @@ function solve_velocity_potential!(mesh, image, prefix)
 
     # Positive error => the triangle needs to shrink (less light)
     error_luminosity = Float64.(lens_pixels_area - image)
-    error_luminosity = error_luminosity .- average(error_luminosity)
+    error_luminosity .-= average(error_luminosity)
 
     # Save the loss image as a png
     save_plot_scalar_field!(error_luminosity, prefix * "_loss", image)
