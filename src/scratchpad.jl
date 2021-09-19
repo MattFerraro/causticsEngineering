@@ -14,10 +14,10 @@ image = Images.load("./examples/personal/statue_of_liberty_2.jpg"); # Check curr
 image = Images.load("./examples/personal/statue_of_liberty_3.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/caricature.jpg"); # Check current working directory with pwd()
-image = Images.load("./examples/personal/image.jpg"); # Check current working directory with pwd()
+image = Images.load("./examples/personal/portrait.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 
-mesh, imageBW = engineer_caustics(image;);
+mesh, imageBW = engineer_caustics(image);
 
 mesh, imageBW = original_engineer_caustics(image);
 
@@ -142,3 +142,72 @@ using MeshViz
 import GLMakie
 MeshViz.viz(cat_mesh3D)
 MeshViz.viz(cat_mesh2D)
+
+
+
+
+
+
+
+
+
+imageBW = Float64.(Gray.(image))
+
+# Set global size parameters
+height, width = size(imageBW)
+global N_Pixel_Height = height
+global N_Pixel_Width = width
+global Meters_Per_Pixel = Caustics_Long_Side / N_Pixel_Height
+println("Image size: $(N_Pixel_Height) x $(N_Pixel_Width)")
+
+# mesh is the same size as the image with an extra row/column to have coordinates to
+# cover each image corner with a triangle.
+mesh = FaceMesh(N_Pixel_Height, N_Pixel_Width)
+
+# The total energy going through the lens is equal to the amount of energy on the caustics
+total_energy_lens = N_Pixel_Height * N_Pixel_Width * 1.0     # 1 unit of energy per pixel
+total_energy_caustics = sum(imageBW)
+average_energy_per_pixel = average(imageBW)
+
+# imageBW is normalised to the same (sort of) _energy_ as the original image.
+imageBW = imageBW / average_energy_per_pixel
+
+lens_pixels_area = get_lens_pixels_area(mesh)
+
+# Positive error => the triangle needs to shrink (less light)
+error_luminosity = Float64.(lens_pixels_area - imageBW)
+error_luminosity = error_luminosity .- average(error_luminosity)
+
+# Save the loss image as a png
+println(
+    """
+Luminosity:
+    Max/min pixel areas: $(maximum(lens_pixels_area)) / $(minimum(lens_pixels_area))
+    Average pixel areas: $(average_absolute(lens_pixels_area))
+    Average pixel areas: $(average(lens_pixels_area))
+
+    Max/min luminosity error: $(maximum(error_luminosity)) / $(minimum(error_luminosity))
+    Average abs error: $(average_absolute(error_luminosity))
+    Average error: $(average(error_luminosity))
+    """,
+)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

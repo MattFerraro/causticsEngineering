@@ -38,9 +38,16 @@ export
     FieldVertex3D,
     FaceMesh,
 
+    # math
+    average,
+    average_absolute,
+    laplacian,
+    ∇,
+
     # Mesh
     create_solid,
     create_solid_as_dict,
+    get_lens_pixels_area,
 
     # Plotting
     plot_as_quiver,
@@ -49,8 +56,10 @@ export
     save_obj!,
 
     # Main procedures
-    main,
-    engineer_caustics
+    propagate_poisson,
+    march_mesh!,
+    engineer_caustics,
+    main
 
 
 end # End module

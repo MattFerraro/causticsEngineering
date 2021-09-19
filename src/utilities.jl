@@ -143,7 +143,7 @@ function reset_border_values!(corners::FieldVertex3D)
 end
 
 
-Base.size(fv::FieldVertex3D) = FieldVertex3D.size
+Base.size(fv::FieldVertex3D) = fv.size
 
 
 """
@@ -155,7 +155,7 @@ function Vertex3D(fv::FieldVertex3D, row, col)
     if (1 <= row <= height + 1) && (1 <= col <= width + 1)
         Vertex3D(
             fv.r[row, col],
-            fv.y[row, col],
+            fv.c[row, col],
             fv.ϕ[row, col],
             fv.vr[row, col],
             fv.vc[row, col],
@@ -243,33 +243,14 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
         end
 
         t1_row, t1_col = t[1]
+        p1 = Vertex3D(mesh.corners, t1_row, t1_col)
+
         t2_row, t2_col = t[2]
+        p2 = Vertex3D(mesh.corners, t2_row, t2_col)
+
         t3_row, t3_col = t[3]
+        p3 = Vertex3D(mesh.corners, t3_row, t3_col)
 
-        r1 = mesh.corners.r[t1_row, t1_col]
-        c1 = mesh.corners.c[t1_row, t1_col]
-        ϕ1 = mesh.corners.ϕ[t1_row, t1_col]
-        vr1 = mesh.corners.vr[t1_row, t1_col]
-        vc1 = mesh.corners.vc[t1_row, t1_col]
-        # @assert r1^2 + c1^2 <= max_distance_squared "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
-
-        r2 = mesh.corners.r[t2_row, t2_col]
-        c2 = mesh.corners.c[t2_row, t2_col]
-        ϕ2 = mesh.corners.ϕ[t2_row, t2_col]
-        vr2 = mesh.corners.vr[t2_row, t2_col]
-        vc2 = mesh.corners.vc[t2_row, t2_col]
-        # @assert r2^2 + c2^2 <= max_distance_squared "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
-
-        r3 = mesh.corners.r[t3_row, t3_col]
-        c3 = mesh.corners.c[t3_row, t3_col]
-        ϕ3 = mesh.corners.ϕ[t3_row, t3_col]
-        vr3 = mesh.corners.vr[t3_row, t3_col]
-        vc3 = mesh.corners.vc[t3_row, t3_col]
-        # @assert r3^2 + c3^2 <= max_distance_squared "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
-
-        p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
-        p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
-        p3 = Vertex3D(r3, c3, ϕ3, vr3, vc3)
         return (p1, p2, p3)
     else
         # return (missing, missing, missing)
@@ -364,3 +345,19 @@ function get_lens_pixels_area(mesh::FaceMesh)
     average_energy_per_pixel = average(total_area)
     return total_area / average_energy_per_pixel
 end
+
+
+"""
+$(SIGNATURES)
+
+"""
+function field_summary(field, fieldname)
+    max = round(maximum(field), sigdigits = 4)
+    min = round(minimum(field), sigdigits = 4)
+    avg = round(average(field), sigdigits = 4)
+    abs = round(average_absolute(field), sigdigits = 4)
+
+    return """$(fieldname) (Max/Min/Avg/Avg abs.): $(max) / $(min) / $(avg) / $(abs)"""
+end
+
+
