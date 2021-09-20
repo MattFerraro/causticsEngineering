@@ -217,17 +217,17 @@ height, width = size(imageBW)
 # solve_velocity_potential
 mesh = CausticsEngineering.FaceMesh(height, width);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
+area_distorted_corners = CausticsEngineering.get_lens_pixels_area(mesh);
+CausticsEngineering.field_summary(area_distorted_corners)
+
 
 origmesh = CausticsEngineering.squareMesh(width + 1, height + 1);
 origϕ = zeros(width, height);
 CausticsEngineering.field_summary(origϕ)
-
-
-# height, width = size(mesh.corners.ϕ)
-area_distorted_corners = CausticsEngineering.get_lens_pixels_area(mesh);
 origarea_distorted_corners = CausticsEngineering.getPixelArea(origmesh);
-CausticsEngineering.field_summary(area_distorted_corners)
+
 CausticsEngineering.field_summary(area_distorted_corners - origarea_distorted_corners)
+
 
 error_luminosity = Float64.(area_distorted_corners - imageBW);
 CausticsEngineering.field_summary(error_luminosity)
@@ -253,17 +253,21 @@ CausticsEngineering.field_summary(mesh.corners.ϕ)
 Lϕ = CausticsEngineering.laplacian(mesh.corners.ϕ);
 CausticsEngineering.field_summary(Lϕ)
 δ = Lϕ - error_luminosity;
-δ .*= CausticsEngineering.ω / 4.0;
+δ .*= 0.50;
 CausticsEngineering.field_summary(δ)
 
 
-mesh.corners.ϕ[1:end-1, 1:end-1] .+= δ;
-mesh.corners.ϕ .-= average(mesh.corners.ϕ);
+ϕ = mesh.corners.ϕ[1:end-1, 1:end-1];
+ϕ .+= δ;
+mesh.corners.ϕ[1:end-1, 1:end-1] .= ϕ .- average(ϕ);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
 
 
 mesh = CausticsEngineering.FaceMesh(height, width);
-CausticsEngineering.field_summary(CausticsEngineering.laplacian(mesh.corners.ϕ) - error_luminosity)
+CausticsEngineering.field_summary(
+    CausticsEngineering.laplacian(mesh.corners.ϕ) - error_luminosity,
+)
+
 
 max_update, Lϕ, δ = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
@@ -272,7 +276,8 @@ CausticsEngineering.field_summary(δ)
 
 
 origϕ = zeros(width, height);
-max_update, origLϕ, origδ = CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity);
+max_update, origLϕ, origδ =
+    CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity);
 CausticsEngineering.field_summary(origϕ)
 CausticsEngineering.field_summary(origLϕ)
 CausticsEngineering.field_summary(origδ)
@@ -285,42 +290,43 @@ CausticsEngineering.field_summary(origδ)
 
 mesh = CausticsEngineering.FaceMesh(height, width);
 new_update = 10_000
-old_update = 2*new_update
+old_update = 2 * new_update
 for i ∈ 1:1_000
     old_update = new_update
-    new_update, Lϕ, δ = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity)
+    new_update, Lϕ, δ =
+        CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity)
     i % 50 == 0 && println("""
         $(i) => $(max_update)
             $(CausticsEngineering.field_summary(mesh.corners.ϕ))
             $(CausticsEngineering.field_summary(Lϕ))
             $(CausticsEngineering.field_summary(δ))
-            """
-    )
+            """)
     if new_update > old_update || i == 5_000
-        new_update, Lϕ, δ = CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity)
+        new_update, Lϕ, δ =
+            CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity)
         println("""
         $(i) => $(new_update)
             $(CausticsEngineering.field_summary(mesh.corners.ϕ))
             $(CausticsEngineering.field_summary(Lϕ))
             $(CausticsEngineering.field_summary(δ))
-            """
-            )
+            """)
         break
     end
 end
 
 origϕ = zeros(width, height);
 for i ∈ 1:5_000
-    max_update,origLϕ, origδ = CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity);
+    max_update, origLϕ, origδ =
+        CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity)
     i % 500 == 0 && println("""
         $(i) => $(max_update)
             $(CausticsEngineering.field_summary(origϕ))
             $(CausticsEngineering.field_summary(origLϕ))
             $(CausticsEngineering.field_summary(origδ))
-            """
-    )
+            """)
     if max_update <= 1e-3
-        max_update, origLϕ, origδ = CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity);
+        max_update, origLϕ, origδ =
+            CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity)
         println(CausticsEngineering.field_summary(origϕ))
         println(CausticsEngineering.field_summary(origLϕ))
         println(CausticsEngineering.field_summary(origδ))
@@ -379,14 +385,19 @@ mesh.corners.vr .= -∇ϕᵤ
 mesh.corners.vc .= -∇ϕᵥ
 list_triangles = vcat(
     [
-        CausticsEngineering.triangle3D(mesh, row, col, :top) for row ∈ 1:height, col ∈ 1:width
+        CausticsEngineering.triangle3D(mesh, row, col, :top) for row ∈ 1:height,
+        col ∈ 1:width
     ],
     [
-        CausticsEngineering.triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width
+        CausticsEngineering.triangle3D(mesh, row, col, :bottom) for row ∈ 1:height,
+        col ∈ 1:width
     ],
 )
 
-list_maximum_t = [time for time ∈ CausticsEngineering.find_maximum_t.(list_triangles) if !isnothing(time) && time > 0.]
+list_maximum_t = [
+    time for time ∈ CausticsEngineering.find_maximum_t.(list_triangles) if
+    !isnothing(time) && time > 0.0
+]
 minimum(list_maximum_t)
 maximum(list_maximum_t)
 
@@ -394,14 +405,5 @@ maximum(list_maximum_t)
 
 mesh.corners.r += δ * ∇ϕᵤ
 mesh.corners.c += δ * ∇ϕᵥ
-
-
-end
-
-
-
-
-
-
 
 nothing;

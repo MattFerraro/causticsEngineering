@@ -343,7 +343,11 @@ function get_lens_pixels_area(mesh::FaceMesh)
     total_area = top_tri_area + bot_tri_area
 
     average_energy_per_pixel = average(total_area)
-    return total_area / average_energy_per_pixel
+    luminosity_pixels = total_area / average_energy_per_pixel
+
+    @assert abs(sum(luminosity_pixels) - height * width) < 1.0 "Total lens luminosity is incorrect"
+
+    return luminosity_pixels
 end
 
 
@@ -352,7 +356,7 @@ $(SIGNATURES)
 
 """
 function field_summary(field, fieldname)
-    s = round(sum(field), sigdigits = 4)
+    s = round(sum(field), sigdigits = 6)
     max = round(maximum(field), sigdigits = 4)
     min = round(minimum(field), sigdigits = 4)
     avg = round(average(field), sigdigits = 4)
@@ -366,6 +370,3 @@ $(SIGNATURES)
 
 """
 field_summary(field) = field_summary(field, "")
-
-
-

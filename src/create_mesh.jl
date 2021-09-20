@@ -25,8 +25,11 @@ function engineer_caustics(source_image)
     counter = 0
     while (abs(max_update) > 1e-5 && counter < 5_000)
         counter += 1
-        ϕ, ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
-        marginal_change = average_absolute(ϕ - mesh.corners.ϕ)
+
+        ϕ = mesh.corners.ϕ
+        mesh.corners.ϕ, mesh.corners.r, mesh.corners.c, ε, max_update =
+            solve_velocity_potential!(mesh, imageBW, "it$(counter)")
+        marginal_change = average_absolute(mesh.corners.ϕ - ϕ)
 
         print("""
             RESULT AT ITERATION $(counter):
@@ -35,7 +38,7 @@ function engineer_caustics(source_image)
                 Marginal change = $(marginal_change)
                 """)
 
-        mesh.corners.ϕ .= ϕ
+        plot_as_quiver(mesh, n_steps = 50, scale = 1.0, max_length = height / 20)
     end
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
@@ -89,30 +92,28 @@ function solve_velocity_potential!(mesh, image, prefix)
     while 1e-4 < new_update < old_update && (old_update - new_update) / old_update > 1e-4
         count += 1
         old_update = new_update
-        new_update, _ = CausticsEngineering.propagate_poisson!(ϕ, ε)
-        count % 500 == 0 && println(
-            """ solve_velocity_potential! during loop at count $(count) with max_update = $(round(new_update, sigdigits=4)):
-                    $(field_summary(mesh.corners.ϕ, "mesh.corners.ϕ"))
-            """,
-        )
 
+        ϕ, _, _, new_update = CausticsEngineering.propagate_poisson(ϕ, ε)
+
+        count % 500 == 0 && println(
+            """
+solve_velocity_potential! during loop at count $(count) with max_update = $(round(new_update, sigdigits=4)):
+        $(field_summary(mesh.corners.ϕ, "ϕ"))
+""",
+        )
     end
 
     # Now we need to march the mesh row,col corner locations according to this gradient.
-    march_mesh!(mesh, ϕ)
+    coord_r, coord_c = march_mesh(mesh, ϕ)
 
-    marginal_change = ϕ - mesh.corners.ϕ
+    # marginal_change = ϕ - mesh.corners.ϕ
+    # Marginal update of ϕ: $(CausticsEngineering.field_summary(marginal_change))
     println("""
         Result of marching
             New ϕ: $(CausticsEngineering.field_summary(ϕ))
-            Marginal update of ϕ: $(CausticsEngineering.field_summary(marginal_change))
             """)
 
-    mesh.corners.ϕ .= ϕ
-
-    plot_as_quiver(mesh, n_steps = 50, scale = 1.0, max_length = height / 20)
-
-    return ϕ, ε, new_update
+    return ϕ, coord_r, coord_c, ε, new_update
 end
 
 
@@ -166,13 +167,15 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
     # divergence_direction .-= average(divergence_direction)
 
 
+    ϕ = mesh.corners.ϕ
+
     max_update = Inf
     old_update = Inf
     for i ∈ 1:typemax(Int64)
         old_update = max_update
-        max_update =
-            CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, -divergence_direction)
+        ϕ, _, _, max_update = propagate_poisson(ϕ, -divergence_direction)
         i % 100 == 0 && println("Convergence horiz. Δ max update = $(max_update)")
+
         (abs(old_update - max_update) <= 1e-6 || abs(max_update) <= 1e-4) && break
     end
 
@@ -180,7 +183,7 @@ function move_horizontally(mesh::FaceMesh, image; f = Focal_Length)
         "Convergence horiz. Δ stopped with max_update of $(max_update) at counter = $(counter)",
     )
 
-    return true_H, max_update
+    return ϕ, max_update
 end
 
 
@@ -209,7 +212,7 @@ In order of how to think about the flow of the program for the velocity potentia
     - => Increase the value of ϕ at that point means a positive change when δ > 0.
     - δ > 0 => correction of the SAME sign.
 """
-function propagate_poisson!(ϕ::Matrix{Float64}, ε::Matrix{Float64})
+function propagate_poisson(ϕ::Matrix{Float64}, ε::Matrix{Float64})
     # Ensure that border conditions are as they should (= 0.0)
     height, width = size(ε)
     # fill_borders!(ε, 0.0)
@@ -231,9 +234,10 @@ function propagate_poisson!(ϕ::Matrix{Float64}, ε::Matrix{Float64})
 
     # In the case of the velocity potential,
     # if δ > 0, the Laplacian is too high at that point (∇²ϕ is too low).
-    ϕ[1:end-1, 1:end-1] .+= δ
+    ϕ_res = zeros(Float64, size(ϕ))
+    ϕ_res[1:end-1, 1:end-1] = ϕ[1:end-1, 1:end-1] + δ
 
-    ϕ .-= average(ϕ)
+    ϕ_res .-= average(ϕ_res)
 
     # ##################################################################################################################
     # # From the velocity potential field ϕ, we calculate its gradient (the velocity), then its divergence.
@@ -251,7 +255,7 @@ function propagate_poisson!(ϕ::Matrix{Float64}, ε::Matrix{Float64})
     #     ϕ[row, col] += δ[row, col]
     # end
 
-    return maximum(abs.(δ)), ∇²ϕ_est, δ
+    return ϕ_res, ∇²ϕ_est, δ, maximum(abs.(δ))
 end
 
 
@@ -263,7 +267,7 @@ $(SIGNATURES)
 
 `march_mesh!` flexes the mesh
 """
-function march_mesh!(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
+function march_mesh(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
 
     # Calculate the gradient of the velocity potential.
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
@@ -272,8 +276,8 @@ function march_mesh!(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
     # However all the nodes located at a border will never move
     # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain of the same size.
     # reset_border_values!(mesh.corners)
-    mesh_r = copy(mesh.corners.r)
-    mesh_c = copy(mesh.corners.c)
+    mesh_r = mesh.corners.r
+    mesh_c = mesh.corners.c
 
     # Get the time, at that velocity, for the area of the triangle to be nil.
     # We are only interested by positive values to only move in the direction of the gradient
@@ -281,7 +285,6 @@ function march_mesh!(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
     mesh.corners.vc .= -∇ϕᵥ
 
     height, width = size(mesh)
-
     list_triangles = vcat(
         [
             CausticsEngineering.triangle3D(mesh, row, col, :top) for row ∈ 1:height,
@@ -293,6 +296,7 @@ function march_mesh!(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
         ],
     )
 
+
     list_maximum_t = [
         time for time ∈ CausticsEngineering.find_maximum_t.(list_triangles) if
         !isnothing(time) && time > 0.0
@@ -302,8 +306,8 @@ function march_mesh!(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
 
     δ = minimum(list_maximum_t) / 1.2
 
-    mesh.corners.r .+= δ * ∇ϕᵤ
-    mesh.corners.c .+= δ * ∇ϕᵥ
+    mesh_r .+= δ .* ∇ϕᵤ
+    mesh_c .+= δ .* ∇ϕᵥ
 
     # for row ∈ 1:height, col ∈ 1:width
     #     list_triangles = [triangle3D(mesh, row, col, :top), triangle3D(mesh, row, col, :bottom) ]
@@ -322,11 +326,12 @@ function march_mesh!(mesh::FaceMesh, ϕ::AbstractMatrix{Float64})
 
     println("""
         March mesh:
+            correction_ratio δ = $(δ)
             $(field_summary(∇ϕᵤ, "Vu"))
             $(field_summary(∇ϕᵥ, "Vu"))
             $(field_summary(mesh.corners.r - mesh_r, "mesh changes on row"))
             $(field_summary(mesh.corners.c - mesh_c, "mesh changes on col"))
 
             """)
-    return nothing
+    return mesh_r, mesh_c
 end
