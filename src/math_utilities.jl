@@ -75,4 +75,3 @@ function laplacian(ϕ::AbstractMatrix{Float64})
 
     return ∇²ϕ[1:end-1, 1:end-1]
 end
-

@@ -1,5 +1,3 @@
-using FileIO, MeshIO
-
 
 # Utility function to name a vertex
 vertex_name(face::String, row::Int64, col::Int64)::String = "Vertex_$(name)_$(row)_$(col)"

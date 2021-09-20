@@ -352,12 +352,20 @@ $(SIGNATURES)
 
 """
 function field_summary(field, fieldname)
+    s = round(sum(field), sigdigits = 4)
     max = round(maximum(field), sigdigits = 4)
     min = round(minimum(field), sigdigits = 4)
     avg = round(average(field), sigdigits = 4)
     abs = round(average_absolute(field), sigdigits = 4)
 
-    return """$(fieldname) (Max/Min/Avg/Avg abs.): $(max) / $(min) / $(avg) / $(abs)"""
+    return """$(fieldname) (Sum/Max/Min/Avg/Avg abs.): $(s) / $(max) / $(min) / $(avg) / $(abs)"""
 end
+
+"""
+$(SIGNATURES)
+
+"""
+field_summary(field) = field_summary(field, "")
+
 
 

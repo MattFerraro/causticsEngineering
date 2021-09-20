@@ -1,10 +1,16 @@
 module CausticsEngineering
 
 using DocStringExtensions
-using Random, Meshes, Images
+using Random, Images
 
 using Plots
 gr()
+
+using Meshes, FileIO, MeshIO
+
+
+include("../examples/personal/original.jl")
+
 
 include("parameters.jl")
 include("utilities.jl")
