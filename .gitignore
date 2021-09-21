@@ -38,4 +38,5 @@ Manifest.toml
 *sync-conflict*
 src/debug_script.jl
 examples/personal
+examples/*.png
 

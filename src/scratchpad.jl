@@ -1,8 +1,10 @@
 using Revise, Debugger
-using Images, Plots;
-gr();
+using Images, Plots
+gr()
 
 using CausticsEngineering
+
+image = Images.load("./examples/personal/goose.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
 
@@ -19,7 +21,32 @@ image = Images.load("./examples/personal/bilal.jpg"); # Check current working di
 
 mesh, imageBW = engineer_caustics(image);
 
+imageBW = Float64.(Gray.(image));
+Gray.(imageBW)
+
+new_img = CausticsEngineering.get_lens_pixels_area(mesh);
+luminosity_ratio = sum(imageBW) / sum(new_img)
+Gray.(new_img * luminosity_ratio)
+
+
+ε = Float64.(lens_pixels_area - image)
+ε .-= average(ε)
+
+# Save the loss image as a png
+save_plot_scalar_field!(ε, "loss_" * prefix, image)
+
+
+
+
 mesh, imageBW = CausticsEngineering.original_engineer_caustics(image);
+imageBW = Float64.(Gray.(image))
+Gray.(imageBW)
+
+new_img = CausticsEngineering.get_lens_pixels_area(mesh)
+luminosity_ratio = sum(imageBW) / sum(new_img)
+Gray.(new_img * luminosity_ratio)
+
+
 
 
 imageBW = Float64.(Gray.(image));
@@ -210,8 +237,6 @@ imageBW /= average(imageBW);
 sum(imageBW)
 
 height, width = size(imageBW)
-
-
 
 
 # solve_velocity_potential

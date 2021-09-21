@@ -25,8 +25,11 @@ function plot_as_quiver(
     # Those gradients are the opposite direction.
     ϕ = -mesh.corners.ϕ
 
-    mat_vr = (reverser ? -1 : 1) .* mesh.corners.vr .* scale
-    mat_vc = (reversec ? -1 : 1) .* mesh.corners.vc .* scale
+    v_length = sqrt.(mesh.corners.vr .^ 2 + mesh.corners.vr .^ 2)
+    v_max = maximum(v_length)
+
+    mat_vr = (reverser ? -1 : 1) .* mesh.corners.vr * scale / v_max
+    mat_vc = (reversec ? -1 : 1) .* mesh.corners.vc * scale / v_max
 
     mat_vr = clamp.(mat_vr, -max_length, max_length)
     mat_vc = clamp.(mat_vc, -max_length, max_length)
@@ -130,28 +133,54 @@ end
 """
 $(SIGNATURES)
 """
-function save_plot_scalar_field!(calculated_scalar_field, filename, img)
-    scalar_field = calculated_scalar_field'
+function save_plot_scalar_field!(scalar_field, filename, img)
+    blue = zeros(Float64, size(scalar_field))
+    red = zeros(Float64, size(scalar_field))
+    green = zeros(Float64, size(scalar_field))
 
-    blue = zeros(size(scalar_field))
-    red = zeros(size(scalar_field))
-    green = zeros(size(scalar_field))
+    height, width = size(scalar_field)
 
-    blue[scalar_field.>0] = scalar_field[scalar_field.>0]
-    red[scalar_field.<0] = -scalar_field[scalar_field.<0]
+    for r ∈ 1:height, c ∈ 1:width
+        field = scalar_field[r, c]
+        if field < -1.0
+            # Green if luminosity error < -1.0
+            red[r, c] = 0.0
+            blue[r, c] = 0.0
+            green[r, c] = 1.0
 
-    rgbImg = RGB.(red, green, blue)'
-    save("./examples/$(filename).png", map(clamp01nan, rgbImg))
+        elseif -1.0 <= field < 0.0
+            # Red shade if negative
+            red[r, c] = -field
+            blue[r, c] = 0.0
+            green[r, c] = 0.0
+
+        elseif 0.0 <= field < 1.0
+            # Blue shade if positive
+            red[r, c] = 0.0
+            blue[r, c] = field
+            green[r, c] = 0.0
+
+        elseif 1.0 <= field
+            # White  if > 1
+            red[r, c] = 1.0
+            blue[r, c] = 1.0
+            green[r, c] = 1.0
+        end
+    end
+
+    rgbImg = RGB.(red, green, blue)
+    save("./examples/$(filename).png", rgbImg)
 end
 
 
 """
 $(SIGNATURES)
 """
-function save_plot_scalar_field(calculated_scalar_field, prefix, img)
-    scalar_field = calculated_scalar_field'
-    normalised_D_max = scalar_field ./ maximum(scalar_field)
-    normalised_D_min = scalar_field ./ minimum(scalar_field)
+function save_plot_scalar_field(scalar_field, prefix, img)
+    normalised_D_max = scalar_field
+    normalised_D_min = scalar_field
+    # normalised_D_max = scalar_field ./ maximum(scalar_field)
+    # normalised_D_min = scalar_field ./ minimum(scalar_field)
 
     blue = zeros(size(scalar_field))
     red = zeros(size(scalar_field))
@@ -160,7 +189,7 @@ function save_plot_scalar_field(calculated_scalar_field, prefix, img)
     blue[scalar_field.>0] = normalised_D_max[scalar_field.>0]
     red[scalar_field.<0] = -normalised_D_min[scalar_field.<0]
 
-    rgbImg = RGB.(red, green, blue)'
+    rgbImg = map(clamp01nan, RGB.(red, green, blue))
     save("./examples/$(prefix)_loss.png", map(clamp01nan, rgbImg))
 
     println("Saving output image:")
