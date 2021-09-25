@@ -1,9 +1,9 @@
 """
 $(TYPEDEF)
 
-## Coordinates. Represent the data of each topleft corner of a pixel.
-## posts/fences: One more corner than number of pixels.
-
+Coordinates as row (vertical), columns (horizontal). Represent the data of each topleft corner of a pixel.
+vr, vc: velocity vector of that corner.
+Warning: posts/fences: One more corner than number of pixels.
 """
 struct Vertex3D
     r::Float64
@@ -45,10 +45,9 @@ function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
     c = dist(v3, v1)
     s = (a + b + c) / 2.0
 
-    surface = max(s * (s - a) * (s - b) * (s - c), 1 / 100.0)
-    @assert surface >= 0.0 "Negative surface for $(v1),  $(v2),  $(v3)"
-
-    return sqrt(surface)
+    # surface_sq = (a + b + c) * (- a + b + c) * (a - b + c) * (a + b - c) / 16.0
+    surface_sq = s * (s - a) * (s - b) * (s - c)
+    return surface_sq <= 1e-100 ? 0.0 : sqrt(surface_sq)
 end
 
 
@@ -92,12 +91,11 @@ mutable struct FieldVertex3D
 
     r::AbstractMatrix{Float64}
     c::AbstractMatrix{Float64}
+    vr::AbstractMatrix{Float64}
+    vc::AbstractMatrix{Float64}
 
     # Velocity potential at each corner
     ϕ::AbstractMatrix{Float64}
-
-    vr::AbstractMatrix{Float64}
-    vc::AbstractMatrix{Float64}
 
     rows_numbers::AbstractMatrix{Float64}
     cols_numbers::AbstractMatrix{Float64}
@@ -105,17 +103,18 @@ end
 
 # Information about each corner surrounding a pixel. Posts&fences warning!!!
 function FieldVertex3D(height, width)
+    # Two matrices comtaining the row and column number of each element of the matrix
     rows_numbers = repeat(Float64.(1:height+1), 1, width + 1)
     cols_numbers = repeat(Float64.(1:width+1)', height + 1, 1)
 
     mr = rows_numbers
     mc = cols_numbers
-    mϕ = zeros(Float64, height + 1, width + 1)
-
     mvr = zeros(Float64, height + 1, width + 1)
     mvc = zeros(Float64, height + 1, width + 1)
 
-    fv = FieldVertex3D((height, width), mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
+    mϕ = zeros(Float64, height + 1, width + 1)
+
+    fv = FieldVertex3D((height, width), mr, mc, mvr, mvc, mϕ, rows_numbers, cols_numbers)
     reset_border_values!(fv)
     return fv
 end
@@ -124,10 +123,9 @@ end
 """
 $(SIGNATURES)
 
-Return the dimension of the mesh as the number of rectangles. It does not return the number of corner points.
+Reset the values of the borders corners: all positions at integer values, all velocities at 0.
 """
 function reset_border_values!(corners::FieldVertex3D)
-    # Reset the border at the fixed values fixed coordinates.
     corners.r[1, :] .= corners.rows_numbers[1, :]
     corners.r[end, :] .= corners.rows_numbers[end, :]
 
@@ -136,6 +134,7 @@ function reset_border_values!(corners::FieldVertex3D)
 
     corners.c[1, :] .= corners.cols_numbers[1, :]
     corners.c[end, :] .= corners.cols_numbers[end, :]
+
     corners.c[:, 1] .= corners.cols_numbers[:, 1]
     corners.c[:, end] .= corners.cols_numbers[:, end]
 
@@ -144,7 +143,7 @@ function reset_border_values!(corners::FieldVertex3D)
 end
 
 
-Base.size(fv::FieldVertex3D) = FieldVertex3D.size
+Base.size(fv::FieldVertex3D) = fv.size
 
 
 """
@@ -156,10 +155,10 @@ function Vertex3D(fv::FieldVertex3D, row, col)
     if (1 <= row <= height + 1) && (1 <= col <= width + 1)
         Vertex3D(
             fv.r[row, col],
-            fv.y[row, col],
-            fv.ϕ[row, col],
+            fv.c[row, col],
             fv.vr[row, col],
             fv.vc[row, col],
+            fv.ϕ[row, col],
         )
     else
         missing
@@ -228,30 +227,13 @@ Base.size(mesh::FaceMesh) = mesh.size
 
 
 """
-$(TYPEDEF)
-"""
-struct Triangle
-    mesh::FaceMesh
-    points::Tuple{Int,Int,Int}
-
-    function Triangle(mesh::FaceMesh)
-        return Triangle(
-            mesh,
-            Tuple(mesh.as_index(1, 1), mesh.as_index(2, 1), mesh.as_index(1, 2)),
-        )
-    end
-end
-
-
-
-"""
 $(SIGNATURES)
 
 Converts a triangle as a triplet of references to mesh vertices to a triplet of 3D coordinates.
 """
 function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:bottom})
     height, width = size(mesh)
-    max_distance_sq = ((height + 1) * (width + 1))^2
+    max_distance_squared = (height + 1)^2 + (width + 1)^2
 
     if 1 <= row <= height && 1 <= col <= width
         if side == :top
@@ -261,33 +243,14 @@ function triangle3D(mesh::FaceMesh, row::Int, col::Int, side = Union{:top,:botto
         end
 
         t1_row, t1_col = t[1]
+        p1 = Vertex3D(mesh.corners, t1_row, t1_col)
+
         t2_row, t2_col = t[2]
+        p2 = Vertex3D(mesh.corners, t2_row, t2_col)
+
         t3_row, t3_col = t[3]
+        p3 = Vertex3D(mesh.corners, t3_row, t3_col)
 
-        r1 = mesh.corners.r[t1_row, t1_col]
-        c1 = mesh.corners.c[t1_row, t1_col]
-        ϕ1 = mesh.corners.ϕ[t1_row, t1_col]
-        vr1 = mesh.corners.vr[t1_row, t1_col]
-        vc1 = mesh.corners.vc[t1_row, t1_col]
-        @assert r1^2 + c1^2 <= max_distance_sq "Coordinate $(r1), $(c1), $(ϕ1) of point #1 at $(row), $(col), side = $(side) makes no sense "
-
-        r2 = mesh.corners.r[t2_row, t2_col]
-        c2 = mesh.corners.c[t2_row, t2_col]
-        ϕ2 = mesh.corners.ϕ[t2_row, t2_col]
-        vr2 = mesh.corners.vr[t2_row, t2_col]
-        vc2 = mesh.corners.vc[t2_row, t2_col]
-        @assert r2^2 + c2^2 <= max_distance_sq "Coordinate $(r2), $(c2), $(ϕ2) of point #2 at $(row), $(col), side = $(side) makes no sense "
-
-        r3 = mesh.corners.r[t3_row, t3_col]
-        c3 = mesh.corners.c[t3_row, t3_col]
-        ϕ3 = mesh.corners.ϕ[t3_row, t3_col]
-        vr3 = mesh.corners.vr[t3_row, t3_col]
-        vc3 = mesh.corners.vc[t3_row, t3_col]
-        @assert r3^2 + c3^2 <= max_distance_sq "Coordinate $(r3), $(c3), $(ϕ3) of point #3 at $(row), $(col), side = $(side) makes no sense "
-
-        p1 = Vertex3D(r1, c1, ϕ1, vr1, vc1)
-        p2 = Vertex3D(r2, c2, ϕ2, vr2, vc2)
-        p3 = Vertex3D(r3, c3, ϕ3, vr3, vc3)
         return (p1, p2, p3)
     else
         # return (missing, missing, missing)
@@ -355,6 +318,11 @@ function area(mesh::FaceMesh, row::Int, col::Int; side = Union{:top,:bottom})
     end
 end
 
+"""
+$(SIGNATURES)
+"""
+area(t::Tuple{Vertex3D,Vertex3D,Vertex3D}) = area(t...)
+
 
 """
 $(SIGNATURES)
@@ -365,16 +333,42 @@ area in the r, r plane. h is ignored.
 The function returns a matrix with the quantity of light coming from each 'rectangle'  around a corner. That 'rectangle'
 has been shifted and flexed around.
 """
-function get_area_corners(mesh::FaceMesh)
+function get_lens_pixels_area(mesh::FaceMesh)
     height, width = size(mesh)
 
     top_tri_area =
-        [area(triangle3D(mesh, row, col, :top)...) for row ∈ 1:height, col ∈ 1:width]
-    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in top triangles."
-
+        area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
     bot_tri_area =
-        [area(triangle3D(mesh, row, col, :bottom)...) for row ∈ 1:height, col ∈ 1:width]
-    @assert !any(isnan.(top_tri_area)) "get_area_corners: NaN area in bottom triangles."
+        area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
 
-    return top_tri_area + bot_tri_area
+    total_area = top_tri_area + bot_tri_area
+
+    average_energy_per_pixel = average(total_area)
+    luminosity_pixels = total_area / average_energy_per_pixel
+
+    @assert abs(sum(luminosity_pixels) - height * width) < 1.0 "Total lens luminosity is incorrect"
+
+    return luminosity_pixels
 end
+
+
+"""
+$(SIGNATURES)
+
+"""
+function field_summary(field, fieldname)
+    s = round(sum(field), sigdigits = 6)
+    max = round(maximum(field), sigdigits = 4)
+    min = round(minimum(field), sigdigits = 4)
+    avg = round(average(field), sigdigits = 4)
+    abs = round(average_absolute(field), sigdigits = 4)
+
+    return """$(fieldname) (Sum/Max/Min/Avg/Avg abs.): $(s) / $(max) / $(min) / $(avg) / $(abs)"""
+end
+
+
+"""
+$(SIGNATURES)
+
+"""
+field_summary(field) = field_summary(field, "")

@@ -45,35 +45,11 @@ function find_maximum_t(p1::Vertex3D, p2::Vertex3D, p3::Vertex3D)
     # There can be no solution if, after translation, B abd C move in parallel direction.
     # C will never end up on the line AB.
     # Very unlikely with Float64.
-    # Negative numbers are filtered out when calculating the minimum jiggle ratio
-    return -1.0
+    # If nothing found, no move
+    return nothing
 end
 
 find_maximum_t(p::Tuple{Vertex3D,Vertex3D,Vertex3D}) = find_maximum_t(p[1], p[2], p[3])
-
-
-
-
-"""
-$(SIGNATURES)
-
-This function will take a `grid_definition x grid_definition` matrix and returns a
-`grid_definition x grid_definition` mesh.
-
-"""
-function matrix_to_mesh(ϕ::Matrix{Float64})
-    height, width = size(ϕ)
-
-    mesh = FaceMesh(height, width)
-
-    # 1 more corner than corners! Therefore compiler needs to specify exact indices.
-    mesh.corners.ϕ[1:height, 1:width] .= ϕ[1:height, 1:width]
-
-    # The borders' height is forced at 0.
-    reset_border_values!(mesh.corners)
-
-    return mesh
-end
 
 
 """
