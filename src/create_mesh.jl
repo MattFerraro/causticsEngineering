@@ -118,7 +118,7 @@ function solve_velocity_potential!(mesh, image, prefix)
                 """)
 
     # Save the loss image as a png.
-    save_plot_scalar_field!(ε, "error_ε_$(prefix)")
+    save_plot_scalar_field!(ε_top+ε_bot, "error_ε_$(prefix)")
     save_plot_scalar_field!(ε_top, "error_εtop_$(prefix)")
     save_plot_scalar_field!(ε_bot, "error_εbot_$(prefix)")
 
@@ -137,55 +137,86 @@ function solve_velocity_potential!(mesh, image, prefix)
 
     luminosity_ratio = sum(image/2.) / sum(lens_pixels_area_top)
     save(
-        "./examples/img_$(prefix).png",
+        "./examples/img_$(prefix)_top.png",
         Gray.(clamp.(lens_pixels_area_top * luminosity_ratio, 0.0, 1.0)),
     )
 
     luminosity_ratio = sum(image/2.) / sum(lens_pixels_area_bot)
     save(
-        "./examples/img_$(prefix).png",
+        "./examples/img_$(prefix)_bot.png",
         Gray.(clamp.(lens_pixels_area * lens_pixels_area_bot, 0.0, 1.0)),
     )
 
     # Start with a clean, flat potential field.
-    mesh.corners.ϕ = zeros(Float64, height + 1, width + 1)
-    ϕ_b4 = copy(mesh.corners.ϕ)
+    mesh.corners.ϕ_top = zeros(Float64, height, width)
+    mesh.corners.ϕ_bot = zeros(Float64, height, width)
+
+    ϕ_b4_top = copy(mesh.corners.ϕ_top)
+    ϕ_b4_bot = copy(mesh.corners.ϕ_bot)
+
     count = 0
-    min_update = new_update = 10_000
-    old_update = 2 * new_update
+    min_update_top = min_update_bot = new_update_top = new_update_bot = 10_000
+    old_update_top = 2 * new_update_top
+    old_update_bot = 2 * new_update_bot
     while (
-        1e-5 < new_update < 1.5 * min_update &&
-        1e-4 < (old_update - new_update) / old_update &&
+        1e-5 < new_update_top + new_update_bot < 1.5 * min_update_top + 1.5 * min_update_bot &&
+        1e-4 < (old_update_top - new_update_top) / old_update_top &&
+        1e-4 < (old_update_bot - new_update_bot) / old_update_bot &&
         count < 10_000
     )
         count += 1
-        old_update = new_update
-        min_update = min(min_update, new_update)
+        old_update_top = new_update_top
+        old_update_bot = new_update_bot
+        min_update_top = min(min_update_top, new_update_top)
+        min_update_bot = min(min_update_bot, new_update_bot)
 
-        new_update, ∇²ϕ_est, δ = propagate_poisson!(mesh.corners.ϕ, ε)
+        new_update_top, ∇²ϕ_est_top, δ_top = propagate_poisson!(mesh.corners.ϕ_top,ε_top)
+        new_update_bot, ∇²ϕ_est_bot, δ_bot = propagate_poisson!(mesh.corners.ϕ_bot,ε_bot)
 
         count % 1_000 == 1 && println("""
-                                      Iteration $(count) - max_update = $(round(new_update, sigdigits=4))
-                                          $(field_summary(mesh.corners.ϕ, "ϕ"))
-                                          $(field_summary(∇²ϕ_est, "∇²ϕ_est"))
-                                          $(field_summary(δ, "δ"))
-                                          """)
+                                        TOP
+                                        Iteration $(count) - max_update = $(round(new_update_top, sigdigits=4))
+                                            $(field_summary(mesh.corners.ϕ_top, "ϕ"))
+                                            $(field_summary(∇²ϕ_est_top, "∇²ϕ_est"))
+                                            $(field_summary(δ_top, "δ"))
+                                        BOTTOM
+                                        Iteration $(count) - max_update = $(round(new_update_bot, sigdigits=4))
+                                            $(field_summary(mesh.corners.ϕ_bot, "ϕ"))
+                                            $(field_summary(∇²ϕ_est_bot, "∇²ϕ_est"))
+                                            $(field_summary(δ_bot, "δ"))
+                                            """)
 
         # Save the loss image as a png.
         if count % 1_000 == 1
-            save_plot_scalar_field!(∇²ϕ_est, "∇²ϕ_est_$(prefix)")
-            save_plot_scalar_field!(δ, "delta_$(prefix)")
+            save_plot_scalar_field!(∇²ϕ_est_top, "∇²ϕ_est_$(prefix)")
+            save_plot_scalar_field!(δ_top, "delta_$(prefix)")
             save_plot_scalar_field!(
-                mesh.corners.ϕ - ϕ_b4,
+                mesh.corners.ϕ_bot + mesh.corners.ϕ_top -ϕ_b4_top -ϕ_b4_bot ,
                 "change_mesh.corners.ϕ_$(prefix)",
             )
 
-            ϕ_b4 = copy(mesh.corners.ϕ)
+            save_plot_scalar_field!(∇²ϕ_est_top, "∇²ϕ_est_$(prefix)_top")
+            save_plot_scalar_field!(δ_top, "delta_$(prefix)_top")
+            save_plot_scalar_field!(
+                mesh.corners.ϕ_top - ϕ_b4_top,
+                "change_mesh.corners.ϕ_$(prefix)_top",
+            )
+
+            save_plot_scalar_field!(∇²ϕ_est_bot, "∇²ϕ_est_$(prefix)_bot")
+            save_plot_scalar_field!(δ_bot, "delta_$(prefix)_bot")
+            save_plot_scalar_field!(
+                mesh.corners.ϕ_bot - ϕ_b4_bot,
+                "change_mesh.corners.ϕ_$(prefix)_bot",
+            )
+
+            ϕ_b4_top = copy(mesh.corners.ϕ_top)
+            ϕ_b4_bot = copy(mesh.corners.ϕ_bot)
         end
     end
 
     # Now we need to march the mesh row,col corner locations according to this gradient.
-    δ = march_mesh!(mesh)
+    δ_top = march_mesh!(mesh, :top)
+    δ_bot = march_mesh!(mesh, :bottom)
     return ε, new_update
 end
 
@@ -227,6 +258,59 @@ function march_mesh!(mesh::FaceMesh)
     δ = minimum(list_maximum_t) / 2.0
     mesh.corners.r .-= δ * mesh.corners.vr
     mesh.corners.c .-= δ * mesh.corners.vc
+
+    println(
+        """
+
+    March mesh with correction_ratio δ = $(δ)
+        $(field_summary(mesh.corners.vr, "∇u"))
+        $(field_summary(mesh.corners.vc, "∇v"))
+        $(field_summary(mesh_r - mesh.corners.r , "new mesh changes on row"))
+        $(field_summary(mesh_c - mesh.corners.c, "new mesh changes on col"))
+        $(field_summary(mesh_r - mesh.corners.rows_numbers , "total mesh changes on row"))
+        $(field_summary(mesh_c - mesh.corners.cols_numbers, "total mesh changes on col"))
+
+        """,
+    )
+
+    return δ
+end
+
+
+function march_mesh!(mesh::FaceMesh, side::Union{:top, :bottom})
+
+    # Calculate the gradient of the velocity potential and reverse its direction.
+    if side == :top
+        mesh.corners.vr, mesh.corners.vc = ∇(mesh.corners.ϕ_top)
+    elseif side == :bottom
+        mesh.corners.vr, mesh.corners.vc = ∇(mesh.corners.ϕ_bot)
+    end
+    mesh.corners.vr .*= -1.0
+    mesh.corners.vc .*= -1.0
+
+    # Clean up the mesh borders
+    reset_border_values!(mesh.corners)
+
+    # For each point in the mesh we need to figure out its velocity
+    # However all the nodes located at a border will never move
+    # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain of the same size.
+    mesh_r = copy(mesh.corners.r)
+    mesh_c = copy(mesh.corners.c)
+
+    # Get the time, at that velocity, for the area of the triangle to be nil.
+    # We are only interested by positive values to only move in the direction of the (opposite) gradient
+    height, width = size(mesh)
+    list_triangles = [triangle3D(mesh, row, col, side) for row ∈ 1:height, col ∈ 1:width]
+    list_maximum_t = [t for t ∈ find_maximum_t.(list_triangles) if !isnothing(t) && t > 0.0]
+
+    δ = minimum(list_maximum_t) / 2.0
+    if side == :top
+        mesh.corners.r[1:end-1, 1:end-1] .-= δ * mesh.corners.vr[1:end-1, 1:end-1]
+        mesh.corners.c[1:end-1, 1:end-1] .-= δ * mesh.corners.vc[1:end-1, 1:end-1]
+    elseif
+        mesh.corners.r[2:end, 2:end] .-= δ * mesh.corners.vr[1:end-1, 1:end-1]
+        mesh.corners.c[2:end, 2:end] .-= δ * mesh.corners.vc[1:end-1, 1:end-1]
+    end
 
     println(
         """
