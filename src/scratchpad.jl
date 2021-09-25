@@ -231,7 +231,7 @@ Luminosity:
 ## STEPPING
 
 using Revise, Debugger, Images, Plots;
-gr();
+gr()
 
 using CausticsEngineering
 
@@ -326,11 +326,12 @@ CausticsEngineering.field_summary(origϕ)
 CausticsEngineering.field_summary(origLϕ)
 CausticsEngineering.field_summary(origδ)
 
-
-
-
-
-
+CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 1:end-1] - origϕ')
+CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 1:end-1] - origϕ')
+CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 2:end] - origϕ')
+CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 2:end] - origϕ')
+m = (mesh.corners.ϕ[1:end-1, 1:end-1] + mesh.corners.ϕ[2:end, 1:end-1] + mesh.corners.ϕ[1:end-1, 2:end] + mesh.corners.ϕ[2:end, 2:end]) / 4.;
+CausticsEngineering.field_summary(m - origϕ')
 
 
 
