@@ -21,50 +21,62 @@ function engineer_caustics(source_image)
     # imageBW is normalised to have 1 unit per pixel on average.
     imageBW /= average(imageBW)
 
-    marginal_change = nothing
-    max_update = Inf
+    marginal_change_top = marginal_change_bot = nothing
+    max_update_top = marginal_change_top = Inf
     counter = 0
-    while (abs(max_update) > 1e-6 && counter < 10_000)
+    while (abs(max_update_top+marginal_change_bot) > 1e-6 && counter < 10_000)
         counter += 1
 
         print(
             """
           ================================================================================================================
           STARTING ITERATION $(counter):
-              starting ϕ field = $(field_summary(mesh.corners.ϕ))
+              starting ϕ TOP field = $(field_summary(mesh.corners.ϕ_top))
+              starting ϕ BOT field = $(field_summary(mesh.corners.ϕ_bot))
 
               """,
         )
 
-        ϕ = mesh.corners.ϕ
-        ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
+        ϕ_top = mesh.corners.ϕ_top
+        ε_top, max_update_top = solve_velocity_potential!(mesh.corners.ϕ_top, imageBW/2., "it$(counter)_top")
+        marginal_change_top = mesh.corners.ϕ_top - ϕ_top
 
-        marginal_change = mesh.corners.ϕ - ϕ
+        ϕ_bot = mesh.corners.ϕ_bot
+        ε_bot, max_update_bot = solve_velocity_potential!(mesh.corners.ϕ_bot, imageBW/2., "it$(counter)_bot")
+        marginal_change_bot = mesh.corners.ϕ_bot - ϕ_bot
 
         print(
             """
 
-          RESULT AT ITERATION $(counter):
-              Luminosity error = $(field_summary(ε))
-              Vertical move max update = $(max_update)
-              Marginal change = $(field_summary(marginal_change))
+            RESULT AT ITERATION $(counter):
+                TOP
+                Luminosity error = $(field_summary(ε_top))
+                Vertical move max update = $(max_update_top)
+                Marginal change = $(field_summary(marginal_change_top))
+                end ϕ field = $(field_summary(mesh.corners.ϕ_top))
 
-              end ϕ field = $(field_summary(mesh.corners.ϕ))
-          ================================================================================================================
+                BOT
+                end ϕ field = $(field_summary(mesh.corners.ϕ_bot))
+                Luminosity error = $(field_summary(ε_bot))
+                Vertical move max update = $(max_update_bot)
+                Marginal change = $(field_summary(marginal_change_bot))
+                end ϕ field = $(field_summary(mesh.corners.ϕ_bot))
+
+            ================================================================================================================
 
           """,
         )
-        plot_as_quiver(mesh, n_steps = 50, scale = height / 10, max_length = height / 20)
-        average_absolute(marginal_change) < 1e-3 && break
+        plot_as_quiver(mesh.corners.ϕ_top, n_steps = 50, scale = height / 10, max_length = height / 20)
+        average_absolute(marginal_change_top + marginal_change_bot) < 1e-4 && break
     end
 
     println("\nSTARTING HORIZONTAL ITERATION ---")
 
-    max_update = solve_height_potential(mesh, imageBW; f = Focal_Length)
-    println("\t Horizontal max update = $(max_update)")
+    println("\t Horizontal max update TOP = $(max_update_top) /  BOT = $(max_update_bot)")
 
     # Move the around a nil average.
-    mesh.corners.ϕ .-= average(mesh.corners.ϕ)
+    mesh.corners.ϕ_top .-= average(mesh.corners.ϕ_top)
+    mesh.corners.ϕ_bot .-= average(mesh.corners.ϕ_bot)
 
     return mesh, imageBW
 end
@@ -84,27 +96,55 @@ function solve_velocity_potential!(mesh, image, prefix)
     # Get the area of each individual pixel as stretch/shrunk on the lens. Area = energy.
     # _FENCES_SIZED_
     # Illumination only depends on the position of the corners, not their heights. ϕ is not relevant.
-    lens_pixels_area = get_lens_pixels_area(mesh)
+    lens_pixels_area_top, lens_pixels_area_bot = get_lens_pixels_area(mesh)
 
     # Positive error => the triangle needs to shrink (less light). Enforce nil average error.
-    ε = zeros(Float64, height + 1, width + 1)
-    ε[1:end-1, 1:end-1] = Float64.(lens_pixels_area - image)
-    ε .-= average(ε)
+    ε_top = zeros(Float64, height, width)
+    ε_bot = zeros(Float64, height, width)
+
+    # Each triangle should have the luminosity of half a pixel
+    ε_top[1:end-1, 1:end-1] = Float64.(lens_pixels_area_top - image/2.)
+    ε_top .-= average(ε_top)
+
+    ε_bot[1:end-1, 1:end-1] = Float64.(lens_pixels_area_bot - image/2.)
+    ε_bot .-= average(ε_bot)
 
     println("""
             solve_velocity_potential! before loop:
-                $(field_summary(lens_pixels_area, "Pixel area"))
-                $(field_summary(ε, "luminosity error"))
+                $(field_summary(lens_pixels_area_top, "Pixel area"))
+                $(field_summary(ε_top, "luminosity error"))
+                $(field_summary(lens_pixels_area_bot, "Pixel area"))
+                $(field_summary(ε_bot, "luminosity error"))
                 """)
 
     # Save the loss image as a png.
-    save_plot_scalar_field!(ε, "error_$(prefix)")
+    save_plot_scalar_field!(ε, "error_ε_$(prefix)")
+    save_plot_scalar_field!(ε_top, "error_εtop_$(prefix)")
+    save_plot_scalar_field!(ε_bot, "error_εbot_$(prefix)")
 
     # Save the generated image as a png.
+    lens_pixels_area = lens_pixels_area_top + lens_pixels_area_bot
+    save(
+        "./examples/img_noluminosityratio_$(prefix).png",
+        Gray.(clamp.(lens_pixels_area, 0.0, 1.0)),
+    )
+
     luminosity_ratio = sum(image) / sum(lens_pixels_area)
     save(
         "./examples/img_$(prefix).png",
         Gray.(clamp.(lens_pixels_area * luminosity_ratio, 0.0, 1.0)),
+    )
+
+    luminosity_ratio = sum(image/2.) / sum(lens_pixels_area_top)
+    save(
+        "./examples/img_$(prefix).png",
+        Gray.(clamp.(lens_pixels_area_top * luminosity_ratio, 0.0, 1.0)),
+    )
+
+    luminosity_ratio = sum(image/2.) / sum(lens_pixels_area_bot)
+    save(
+        "./examples/img_$(prefix).png",
+        Gray.(clamp.(lens_pixels_area * lens_pixels_area_bot, 0.0, 1.0)),
     )
 
     # Start with a clean, flat potential field.
