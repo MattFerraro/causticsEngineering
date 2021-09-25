@@ -265,7 +265,8 @@ function create_solid(
     # The connections are listed as a tuple of 3 arrays.
     # First array contains the first point of a triangle, and so on
     triangle_index = [
-        (index_dict[v[1]], index_dict[v[2]], index_dict[v[3]]) for v ∈ values(triangle_dict)
+        (index_dict[v[1]], index_dict[v[2]], index_dict[v[3]]) for
+        v ∈ values(triangle_dict)
     ]
 
     return triangle_dict, vertex_dict, triangle_index, vertex_index
