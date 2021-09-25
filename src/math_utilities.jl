@@ -63,9 +63,9 @@ function laplacian(ϕ::AbstractMatrix{Float64})
     # ϕ is inserted in padded matrix within  1:1+height+1 x 1:1+width+1.
     # The rest of the padded matrix (its borders) are set at 0.0.
     padded_ϕ = zeros(Float64, 1 + height + 1, 1 + width + 1)
-    padded_ϕ[begin+1:end-1, begin+1:end-1] = ϕ
+    padded_ϕ[begin+1:end-1, begin+1:end-1] .= ϕ[1:end, 1:end]
 
-    # Convolution
+    # Convolution = up + down + left + right
     ∇²ϕ =
         padded_ϕ[begin+1-1:end-1-1, begin+1:end-1] +
         padded_ϕ[begin+1+1:end-1+1, begin+1:end-1] +

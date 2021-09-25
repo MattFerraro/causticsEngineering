@@ -62,7 +62,7 @@ export
     save_obj!,
 
     # Main procedures
-    propagate_poisson,
+    propagate_poisson!,
     march_mesh!,
     engineer_caustics,
     main

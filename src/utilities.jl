@@ -1,9 +1,9 @@
 """
 $(TYPEDEF)
 
-## Coordinates. Represent the data of each topleft corner of a pixel.
-## posts/fences: One more corner than number of pixels.
-
+Coordinates as row (vertical), columns (horizontal). Represent the data of each topleft corner of a pixel.
+vr, vc: velocity vector of that corner.
+Warning: posts/fences: One more corner than number of pixels.
 """
 struct Vertex3D
     r::Float64
@@ -91,12 +91,11 @@ mutable struct FieldVertex3D
 
     r::AbstractMatrix{Float64}
     c::AbstractMatrix{Float64}
+    vr::AbstractMatrix{Float64}
+    vc::AbstractMatrix{Float64}
 
     # Velocity potential at each corner
     ϕ::AbstractMatrix{Float64}
-
-    vr::AbstractMatrix{Float64}
-    vc::AbstractMatrix{Float64}
 
     rows_numbers::AbstractMatrix{Float64}
     cols_numbers::AbstractMatrix{Float64}
@@ -104,17 +103,18 @@ end
 
 # Information about each corner surrounding a pixel. Posts&fences warning!!!
 function FieldVertex3D(height, width)
+    # Two matrices comtaining the row and column number of each element of the matrix
     rows_numbers = repeat(Float64.(1:height+1), 1, width + 1)
     cols_numbers = repeat(Float64.(1:width+1)', height + 1, 1)
 
     mr = rows_numbers
     mc = cols_numbers
-    mϕ = zeros(Float64, height + 1, width + 1)
-
     mvr = zeros(Float64, height + 1, width + 1)
     mvc = zeros(Float64, height + 1, width + 1)
 
-    fv = FieldVertex3D((height, width), mr, mc, mϕ, mvr, mvc, rows_numbers, cols_numbers)
+    mϕ = zeros(Float64, height + 1, width + 1)
+
+    fv = FieldVertex3D((height, width), mr, mc, mvr, mvc, mϕ, rows_numbers, cols_numbers)
     reset_border_values!(fv)
     return fv
 end
@@ -123,10 +123,9 @@ end
 """
 $(SIGNATURES)
 
-Return the dimension of the mesh as the number of rectangles. It does not return the number of corner points.
+Reset the values of the borders corners: all positions at integer values, all velocities at 0.
 """
 function reset_border_values!(corners::FieldVertex3D)
-    # Reset the border at the fixed values fixed coordinates.
     corners.r[1, :] .= corners.rows_numbers[1, :]
     corners.r[end, :] .= corners.rows_numbers[end, :]
 
@@ -135,6 +134,7 @@ function reset_border_values!(corners::FieldVertex3D)
 
     corners.c[1, :] .= corners.cols_numbers[1, :]
     corners.c[end, :] .= corners.cols_numbers[end, :]
+
     corners.c[:, 1] .= corners.cols_numbers[:, 1]
     corners.c[:, end] .= corners.cols_numbers[:, end]
 
@@ -156,9 +156,9 @@ function Vertex3D(fv::FieldVertex3D, row, col)
         Vertex3D(
             fv.r[row, col],
             fv.c[row, col],
-            fv.ϕ[row, col],
             fv.vr[row, col],
             fv.vc[row, col],
+            fv.ϕ[row, col],
         )
     else
         missing
@@ -323,6 +323,7 @@ $(SIGNATURES)
 """
 area(t::Tuple{Vertex3D,Vertex3D,Vertex3D}) = area(t...)
 
+
 """
 $(SIGNATURES)
 
@@ -364,6 +365,7 @@ function field_summary(field, fieldname)
 
     return """$(fieldname) (Sum/Max/Min/Avg/Avg abs.): $(s) / $(max) / $(min) / $(avg) / $(abs)"""
 end
+
 
 """
 $(SIGNATURES)

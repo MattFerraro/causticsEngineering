@@ -133,7 +133,7 @@ end
 """
 $(SIGNATURES)
 """
-function save_plot_scalar_field!(scalar_field, filename, img)
+function save_plot_scalar_field!(scalar_field, filename)
     blue = zeros(Float64, size(scalar_field))
     red = zeros(Float64, size(scalar_field))
     green = zeros(Float64, size(scalar_field))

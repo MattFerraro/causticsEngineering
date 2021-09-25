@@ -4,9 +4,11 @@ gr()
 
 using CausticsEngineering
 
-image = Images.load("./examples/personal/goose.jpg"); # Check current working directory with pwd()
-
 image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+
+image = Images.load("./examples/personal/slashdot.jpg"); # Check current working directory with pwd()
+
+image = Images.load("./examples/personal/goose.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/salvador_dali_1.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/salvador_dali_2.jpg"); # Check current working directory with pwd()
@@ -23,6 +25,11 @@ mesh, imageBW = engineer_caustics(image);
 
 imageBW = Float64.(Gray.(image));
 Gray.(imageBW)
+sum(imageBW)
+sum(imageBW) / length(imageBW)
+
+CausticsEngineering.average(imageBW)
+
 
 new_img = CausticsEngineering.get_lens_pixels_area(mesh);
 luminosity_ratio = sum(imageBW) / sum(new_img)
@@ -33,8 +40,7 @@ Gray.(new_img * luminosity_ratio)
 ε .-= average(ε)
 
 # Save the loss image as a png
-save_plot_scalar_field!(ε, "loss_" * prefix, image)
-
+save_plot_scalar_field!(ε, "loss_" * prefix)
 
 
 
@@ -221,7 +227,7 @@ Luminosity:
 
 
 
-##########################################################
+####################################################################################################################
 ## STEPPING
 
 using Revise, Debugger, Images, Plots;
@@ -230,62 +236,114 @@ gr();
 using CausticsEngineering
 
 
-# engineer_caustics
-image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+######################## Load image
+image = Images.load("./examples/personal/slashdot.jpg"); # Check current working directory with pwd()
 imageBW = Float64.(Gray.(image));
 imageBW /= average(imageBW);
 sum(imageBW)
 
-height, width = size(imageBW)
+h, w = size(imageBW)
 
 
-# solve_velocity_potential
-mesh = CausticsEngineering.FaceMesh(height, width);
+######################## Create mesh
+mesh = CausticsEngineering.FaceMesh(h, w);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
+
+origmesh = CausticsEngineering.OriginalMesh(w + 1, h + 1);
+origϕ = zeros(w, h);
+CausticsEngineering.field_summary(origϕ)
+
+
+######################## Lens luminosity
 area_distorted_corners = CausticsEngineering.get_lens_pixels_area(mesh);
 CausticsEngineering.field_summary(area_distorted_corners)
 
-
-origmesh = CausticsEngineering.squareMesh(width + 1, height + 1);
-origϕ = zeros(width, height);
-CausticsEngineering.field_summary(origϕ)
 origarea_distorted_corners = CausticsEngineering.getPixelArea(origmesh);
+CausticsEngineering.field_summary(origarea_distorted_corners)
 
-CausticsEngineering.field_summary(area_distorted_corners - origarea_distorted_corners)
+CausticsEngineering.field_summary(area_distorted_corners - origarea_distorted_corners')
 
 
-error_luminosity = Float64.(area_distorted_corners - imageBW);
+######################## Laplacian
+Lϕ = CausticsEngineering.laplacian(mesh.corners.ϕ);
+CausticsEngineering.field_summary(Lϕ)
+
+function orig_laplacian(ϕ)
+    width, height = size(ϕ)
+    Lϕ = zeros(Float64, size(ϕ))
+
+    for x = 1:width, y = 1:height
+        val_up = (y == 1) ? 0.0 : ϕ[x, y-1]
+        val_down = (y == height) ? 0.0 : ϕ[x, y+1]
+        val_left = (x == 1) ? 0.0 : ϕ[max(1, x - 1), y]
+        val_right = (x == width) ? 0.0 : ϕ[x+1, y]
+
+        Lϕ[x, y] = val_up + val_down + val_left + val_right - 4 * ϕ[x, y]
+
+        # if Lϕ[x, y] != 0.0
+        #     println(val_up, val_down, val_left, val_right, ϕ[x, y], x, y)
+        #     break
+        # end
+    end
+    return Lϕ
+end
+
+origLϕ = orig_laplacian(origϕ);
+CausticsEngineering.field_summary(origLϕ)
+
+
+######################## Error luminosity
+error_luminosity = zeros(Float64, h + 1, w + 1);
+error_luminosity[1:end-1, 1:end-1] = Float64.(area_distorted_corners - imageBW);
 CausticsEngineering.field_summary(error_luminosity)
 
-origerror_luminosity = Float64.(origarea_distorted_corners - imageBW);
+origerror_luminosity = zeros(Float64, w + 1, h + 1);
+origerror_luminosity[1:end-1, 1:end-1] = Float64.(origarea_distorted_corners - imageBW');
 CausticsEngineering.field_summary(origerror_luminosity)
 
-CausticsEngineering.field_summary(error_luminosity - origerror_luminosity)
+CausticsEngineering.field_summary(error_luminosity - origerror_luminosity')
 
 
+######################## Normalised error luminosity
 error_luminosity = error_luminosity .- average(error_luminosity);
 CausticsEngineering.field_summary(error_luminosity)
 
 origerror_luminosity = origerror_luminosity .- average(origerror_luminosity);
 CausticsEngineering.field_summary(origerror_luminosity)
 
-CausticsEngineering.field_summary(error_luminosity - origerror_luminosity)
+CausticsEngineering.field_summary(error_luminosity - origerror_luminosity')
 
 
-
-mesh = CausticsEngineering.FaceMesh(height, width);
+######################## Distance to Laplacian & propagate
+max_update, Lϕ, δ = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
-Lϕ = CausticsEngineering.laplacian(mesh.corners.ϕ);
 CausticsEngineering.field_summary(Lϕ)
-δ = Lϕ - error_luminosity;
-δ .*= 0.50;
 CausticsEngineering.field_summary(δ)
 
+max_update, origLϕ, origδ =
+    CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity);
+CausticsEngineering.field_summary(origϕ)
+CausticsEngineering.field_summary(origLϕ)
+CausticsEngineering.field_summary(origδ)
 
+
+
+
+
+
+
+
+
+δ = Lϕ - error_luminosity;
+CausticsEngineering.field_summary(δ)
+
+δ .*= 0.50;
 ϕ = mesh.corners.ϕ[1:end-1, 1:end-1];
 ϕ .+= δ;
 mesh.corners.ϕ[1:end-1, 1:end-1] .= ϕ .- average(ϕ);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
+
+
 
 
 mesh = CausticsEngineering.FaceMesh(height, width);
@@ -294,18 +352,8 @@ CausticsEngineering.field_summary(
 )
 
 
-max_update, Lϕ, δ = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity);
-CausticsEngineering.field_summary(mesh.corners.ϕ)
-CausticsEngineering.field_summary(Lϕ)
-CausticsEngineering.field_summary(δ)
 
-
-origϕ = zeros(width, height);
-max_update, origLϕ, origδ =
-    CausticsEngineering.orig_propagate_poisson!(origϕ, origerror_luminosity);
-CausticsEngineering.field_summary(origϕ)
-CausticsEngineering.field_summary(origLϕ)
-CausticsEngineering.field_summary(origδ)
+origϕ = zeros(w, h);
 
 
 
@@ -432,3 +480,43 @@ mesh.corners.r += δ * ∇ϕᵤ
 mesh.corners.c += δ * ∇ϕᵥ
 
 nothing;
+
+
+function my_laplacian(ϕ::AbstractMatrix{Float64})
+    height, width = size(ϕ)
+
+    # Embed matrix within a larger matrix for better vectorization and avoid duplicated code
+    # Padded matrix adds 1 row/col after the size of ϕ.
+    # ϕ is inserted in padded matrix within  1:1+height+1 x 1:1+width+1.
+    # The rest of the padded matrix (its borders) are set at 0.0.
+    padded_ϕ = zeros(Float64, 1 + height + 1, 1 + width + 1)
+    padded_ϕ[begin+1:end-1, begin+1:end-1] .= ϕ[1:end, 1:end]
+
+    # Convolution = up + down + left + right
+    ∇²ϕ =
+        padded_ϕ[begin+1-1:end-1-1, begin+1:end-1] +
+        padded_ϕ[begin+1+1:end-1+1, begin+1:end-1] +
+        padded_ϕ[begin+1:end-1, begin+1-1:end-1-1] +
+        padded_ϕ[begin+1:end-1, begin+1+1:end-1+1] -
+        4.0 * padded_ϕ[begin+1:end-1, begin+1:end-1]
+
+    return ∇²ϕ[1:end-1, 1:end-1]
+end
+
+
+
+
+m = [[1.0 2.0 3.0 2.0]; [4.0 5.0 6.0 5.0]; [7.0 8.0 9.0 8.0]; [10.0 11.0 12.0 11.0]]
+h, w = size(m)
+padded_m = zeros(Float64, 1 + h + 1, 1 + w + 1)
+padded_m[begin+1:end-1, begin+1:end-1] .= m[1:end, 1:end]
+padded_m
+
+padded_m[begin+1-1:end-1-1, begin+1:end-1] +
+padded_m[begin+1+1:end-1+1, begin+1:end-1] +
+padded_m[begin+1:end-1, begin+1-1:end-1-1] +
+padded_m[begin+1:end-1, begin+1+1:end-1+1] - 4.0 * padded_m[begin+1:end-1, begin+1:end-1]
+
+
+sum(CausticsEngineering.laplacian(m))
+sum(orig_laplacian(m))
