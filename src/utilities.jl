@@ -337,7 +337,7 @@ function get_lens_pixels_area(mesh::FaceMesh)
     height, width = size(mesh)
 
     top_tri_area =
-        area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
+        area.([triangle3D(mesh, row, col, :top) for row ∈ 1:height, col ∈ 1:width])
     bot_tri_area =
         area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
 
