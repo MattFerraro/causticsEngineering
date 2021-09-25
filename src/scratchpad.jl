@@ -41,21 +41,6 @@ triangle_dict, vertex_dict, triangle_index, vertex_index =
     create_solid(mesh; bottom_distance = Bottom_Offset, top_distance = Top_Offset)
 
 
-# Can be done in 2 steps
-#
-# triangle_dict, vertex_dict = create_solid_as_dict(
-#     mesh;
-#     bottom_distance = Bottom_Offset,
-#     top_distance = Top_Offset
-# )
-#
-# # Generate array or coordinates and indices usable to create traditional mesh objects
-# _, _, triangle_index, vertex_index = create_solid(
-#     triangle_dict,
-#     vertex_dict;
-#     bottom_distance = Bottom_Offset,
-#     top_distance = Top_Offset,
-#     )
 
 # Area of all the distorted pixels
 am = CausticsEngineering.get_area_corners(mesh)
