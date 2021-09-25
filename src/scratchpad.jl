@@ -4,10 +4,9 @@ gr()
 
 using CausticsEngineering
 
-image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
-
 image = Images.load("./examples/personal/slashdot.jpg"); # Check current working directory with pwd()
 
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/goose.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/salvador_dali_1.jpg"); # Check current working directory with pwd()

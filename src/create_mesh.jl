@@ -24,33 +24,43 @@ function engineer_caustics(source_image)
     marginal_change = nothing
     max_update = Inf
     counter = 0
-    while (abs(max_update) > 1e-6 && counter < 10_000)
+    while (abs(max_update) > 1e-6 && counter < 4)
         counter += 1
 
         print(
             """
-          ================================================================================================================
-          STARTING ITERATION $(counter):
-              starting ϕ field = $(field_summary(mesh.corners.ϕ))
+            ================================================================================================================
+            STARTING ITERATION $(counter):
+                starting ϕ field = $(field_summary(mesh.corners.ϕ))
 
-              """,
+            """,
         )
 
-        ϕ = mesh.corners.ϕ
-        ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
+        start_r = deepcopy(mesh.corners.r)
+        start_c = deepcopy(mesh.corners.c)
+        start_ϕ = deepcopy(mesh.corners.ϕ)
 
-        marginal_change = mesh.corners.ϕ - ϕ
+        ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
+        marginal_change = mesh.corners.ϕ - start_ϕ
 
         print(
             """
 
-          RESULT AT ITERATION $(counter):
-              Luminosity error = $(field_summary(ε))
-              Vertical move max update = $(max_update)
-              Marginal change = $(field_summary(marginal_change))
+            RESULT AT ITERATION $(counter):
+                Luminosity error = $(field_summary(ε))
+                Vertical move max update = $(max_update)
+                Marginal change = $(field_summary(marginal_change))
 
-              end ϕ field = $(field_summary(mesh.corners.ϕ))
-          ================================================================================================================
+                $(field_summary(mesh.corners.vr, "∇u"))
+                $(field_summary(mesh.corners.vc, "∇v"))
+                $(field_summary(mesh.corners.r - start_r, "new mesh changes on row"))
+                $(field_summary(mesh.corners.c - start_c, "new mesh changes on col"))
+                $(field_summary(mesh.corners.ϕ - start_ϕ, "new mesh changes on ϕ"))
+                $(field_summary(mesh.corners.r - mesh.corners.rows_numbers, "total mesh changes on row"))
+                $(field_summary(mesh.corners.c - mesh.corners.cols_numbers, "total mesh changes on col"))
+
+                end ϕ field = $(field_summary(mesh.corners.ϕ))
+            ================================================================================================================
 
           """,
         )
@@ -114,8 +124,8 @@ function solve_velocity_potential!(mesh, image, prefix)
     min_update = new_update = 10_000
     old_update = 2 * new_update
     while (
-        1e-5 < new_update < 1.5 * min_update &&
-        1e-4 < (old_update - new_update) / old_update &&
+        1e-6 < new_update < 1.5 * min_update &&
+        1e-5 < (old_update - new_update) / old_update &&
         count < 10_000
     )
         count += 1
@@ -135,10 +145,7 @@ function solve_velocity_potential!(mesh, image, prefix)
         if count % 1_000 == 1
             save_plot_scalar_field!(∇²ϕ_est, "∇²ϕ_est_$(prefix)")
             save_plot_scalar_field!(δ, "delta_$(prefix)")
-            save_plot_scalar_field!(
-                mesh.corners.ϕ - ϕ_b4,
-                "change_mesh.corners.ϕ_$(prefix)",
-            )
+            save_plot_scalar_field!(mesh.corners.ϕ - ϕ_b4, "change_mesh.corners.ϕ_$(prefix)")
 
             ϕ_b4 = copy(mesh.corners.ϕ)
         end
@@ -188,19 +195,17 @@ function march_mesh!(mesh::FaceMesh)
     mesh.corners.r .-= δ * mesh.corners.vr
     mesh.corners.c .-= δ * mesh.corners.vc
 
-    println(
-        """
+    println("""
 
-    March mesh with correction_ratio δ = $(δ)
-        $(field_summary(mesh.corners.vr, "∇u"))
-        $(field_summary(mesh.corners.vc, "∇v"))
-        $(field_summary(mesh_r - mesh.corners.r , "new mesh changes on row"))
-        $(field_summary(mesh_c - mesh.corners.c, "new mesh changes on col"))
-        $(field_summary(mesh_r - mesh.corners.rows_numbers , "total mesh changes on row"))
-        $(field_summary(mesh_c - mesh.corners.cols_numbers, "total mesh changes on col"))
+        March mesh with correction_ratio δ = $(δ)
+            $(field_summary(mesh.corners.vr, "∇u"))
+            $(field_summary(mesh.corners.vc, "∇v"))
+            $(field_summary(mesh_r - mesh.corners.r , "new mesh changes on row"))
+            $(field_summary(mesh_c - mesh.corners.c, "new mesh changes on col"))
+            $(field_summary(mesh_r - mesh.corners.rows_numbers , "total mesh changes on row"))
+            $(field_summary(mesh_c - mesh.corners.cols_numbers, "total mesh changes on col"))
 
-        """,
-    )
+            """)
 
     return δ
 end
