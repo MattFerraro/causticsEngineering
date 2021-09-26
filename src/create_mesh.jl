@@ -6,7 +6,6 @@ $(SIGNATURES)
 function engineer_caustics(source_image)
     imageBW = Float64.(Gray.(source_image))
 
-
     # Set global size parameters
     height, width = size(imageBW)
     global N_Pixel_Height = height
@@ -37,12 +36,7 @@ function engineer_caustics(source_image)
             """,
         )
 
-        start_r = deepcopy(mesh.corners.r)
-        start_c = deepcopy(mesh.corners.c)
-        start_ϕ = deepcopy(mesh.corners.ϕ)
-
-        ε, max_update, list_updates = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
-        append!(list_max_update, list_updates)
+        ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
         marginal_change = mesh.corners.ϕ - start_ϕ
 
         print(
@@ -53,14 +47,6 @@ function engineer_caustics(source_image)
                 Vertical move max update = $(max_update)
                 Marginal change = $(field_summary(marginal_change))
                 end ϕ field = $(field_summary(mesh.corners.ϕ))
-
-                $(field_summary(mesh.corners.vr, "∇u"))
-                $(field_summary(mesh.corners.vc, "∇v"))
-                $(field_summary(mesh.corners.r - start_r, "new mesh changes on row"))
-                $(field_summary(mesh.corners.c - start_c, "new mesh changes on col"))
-                $(field_summary(mesh.corners.ϕ - start_ϕ, "new mesh changes on ϕ"))
-                $(field_summary(mesh.corners.r - mesh.corners.rows_numbers, "total mesh changes on row"))
-                $(field_summary(mesh.corners.c - mesh.corners.cols_numbers, "total mesh changes on col"))
             ================================================================================================================
 
             """,
@@ -69,15 +55,13 @@ function engineer_caustics(source_image)
         average_absolute(marginal_change) < 1e-3 && break
     end
 
-    println("\nSTARTING HORIZONTAL ITERATION ---")
-
-    ϕ_next, max_update = solve_height_potential(mesh, imageBW; f = Focal_Length)
-    println("\t Horizontal max update = $(max_update)")
+    println("\nSTARTING HORIZONTAL DISPERSION ---")
+    ϕ_next, max_update = solve_horizontal_dispersion(mesh, imageBW; f = Focal_Length)
 
     # Move the around a nil average.
     mesh.corners.ϕ .= ϕ_next .- average(ϕ_next)
 
-    return mesh, imageBW, list_max_update
+    return mesh, imageBW
 end
 
 
@@ -92,9 +76,9 @@ function solve_velocity_potential!(mesh, image, prefix)
     # Start with a new clean field
     height, width = size(mesh)
 
+    # Illumination only depends on the position of the corners, not their heights. ϕ is not relevant.
     # Get the area of each individual pixel as stretch/shrunk on the lens. Area = energy.
     # _FENCES_SIZED_
-    # Illumination only depends on the position of the corners, not their heights. ϕ is not relevant.
     lens_pixels_area = get_lens_pixels_area(mesh)
 
     # Positive error => the triangle needs to shrink (less light). Enforce nil average error.
@@ -102,53 +86,13 @@ function solve_velocity_potential!(mesh, image, prefix)
     ε[1:end-1, 1:end-1] = Float64.(lens_pixels_area - image)
     ε .-= average(ε)
 
-    println("""
-            solve_velocity_potential! before loop:
-                $(field_summary(lens_pixels_area, "Pixel area"))
-                $(field_summary(ε, "luminosity error"))
-                """)
-
-    # Save the loss image as a png.
-    save_plot_scalar_field!(ε, "error_$(prefix)")
-
-    # Save the generated image as a png.
-    luminosity_ratio = sum(image) / sum(lens_pixels_area)
-    save(
-        "./examples/img_$(prefix).png",
-        Gray.(clamp.(lens_pixels_area * luminosity_ratio, 0.0, 1.0)),
-    )
-
     # Start with a clean, flat potential field.
-    mesh.corners.ϕ = zeros(Float64, height + 1, width + 1)
-    ϕ_next = ϕ_b4 = copy(mesh.corners.ϕ)
+    ϕ_next = zeros(Float64, height + 1, width + 1)
     count = 0
-    min_update = new_update = 10_000
-    list_new_update = []
-    old_update = 2 * new_update
-    while (
-        1e-5 < new_update < 1.5 * min_update &&
-        count < 3_000
-    )
+    while 1e-5 < new_update && count < 3_000
         count += 1
-        old_update = new_update
-        push!(list_new_update, new_update)
-        min_update = min(min_update, new_update)
 
-        ϕ_next, new_update, ∇²ϕ_est, δ = propagate_poisson(ϕ_next, ε)
-
-        if count % 250 == 1
-            println("""
-                Iteration $(count) - max_update = $(round(new_update, sigdigits=4))
-                    $(field_summary(ϕ_next, "ϕ"))
-                    $(field_summary(∇²ϕ_est, "∇²ϕ_est"))
-                    $(field_summary(δ, "δ"))
-                    """)
-
-            save_plot_scalar_field!(∇²ϕ_est, "∇²ϕ_est_$(prefix)_$(count)")
-            save_plot_scalar_field!(δ, "delta_$(prefix)_$(count)")
-            save_plot_scalar_field!(ϕ_next- ϕ_b4, "change_mesh.corners.ϕ_$(prefix)_$(count)")
-
-            ϕ_b4 = copy(ϕ_next)
+        ϕ_next, new_update = propagate_poisson(ϕ_next, ε)
         end
     end
 
@@ -158,7 +102,7 @@ function solve_velocity_potential!(mesh, image, prefix)
     mesh.corners.c .= c_next
     mesh.corners.ϕ .= ϕ_next
 
-    return ε, new_update, list_new_update
+    return ε, new_update
 end
 
 
@@ -197,18 +141,6 @@ function march_mesh(mesh, mesh_ϕ)
     δ = minimum(list_maximum_t) / 1.5
     new_r = mesh.corners.r - δ * vr
     new_c = mesh.corners.c - δ * vc
-
-    println("""
-
-        March mesh with correction_ratio δ = $(δ)
-            $(field_summary(mesh.corners.vr, "∇u"))
-            $(field_summary(mesh.corners.vc, "∇v"))
-            $(field_summary(new_r - mesh.corners.r , "new mesh changes on row"))
-            $(field_summary(new_c - mesh.corners.c, "new mesh changes on col"))
-            $(field_summary(new_r - mesh.corners.rows_numbers , "total mesh changes on row"))
-            $(field_summary(new_c - mesh.corners.cols_numbers, "total mesh changes on col"))
-
-            """)
 
     return new_r, new_c, δ
 end
@@ -261,33 +193,14 @@ function propagate_poisson(ϕ::Matrix{Float64}, ε::Matrix{Float64})
         new_ϕ[row, col] += δ[row, col]
     end
 
-    return new_ϕ, maximum(abs.(δ)), ∇²ϕ_est, δ
-
-
-    # # Laplacian
-    # # ∇²ϕ_est represent the estimate of the Laplacian of ϕ (second-order value)
-    # ∇²ϕ_est = laplacian(ϕ)
-
-
-    # # In the case of the velocity potential, δ is the difference between the divergence of the luminosity error
-    # # and the current one for the current field ϕ (divergence of its gradient).
-    # # High luminosity error ∇²ϕ means that the triangles are too bright = too large.
-    # # The Laplacian Lϕ has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
-
-    # # Correction ratio to avoid setting the triangle to nothing
-    # δ = ω / 4.0 * (∇²ϕ_est - ε)
-
-    # # In the case of the velocity potential, if δ > 0, the Laplacian is too high at that point (∇²ϕ is too low).
-    # ϕ[1:end-1, 1:end-1] .+= δ
-
-    # return ∇²ϕ_est, δ, maximum(abs.(δ))
+    return new_ϕ, maximum(abs.(δ))
 end
 
 
 """
 $(SIGNATURES)
 """
-function solve_height_potential(mesh::FaceMesh, image; f = Focal_Length)
+function solve_horizontal_dispersion(mesh::FaceMesh, image; f = Focal_Length)
     # height indexes rows, width indexes columns
     height, width = size(mesh)
 
@@ -315,11 +228,6 @@ function solve_height_potential(mesh::FaceMesh, image; f = Focal_Length)
     N_row = tan.(atan.(d_row ./ true_H) / (n₁ - n₂))
     N_col = tan.(atan.(d_col ./ true_H) / (n₁ - n₂))
 
-    # @. N_row[1:end, 1:end] =
-    #     tan(atan(d_row[1:end, 1:end] / true_H[1:end, 1:end]) / (n₁ - n₂))
-    # @. N_col[1:end, 1:end] =
-    #     tan(atan(d_col[1:end, 1:end] / true_H[1:end, 1:end]) / (n₁ - n₂))
-
     # We need to find the divergence of the Vector field described by Nx and Ny
     # div_row/div_col are _FENCES_SIZED_
     div_row = zeros(Float64, size(true_H))
@@ -330,19 +238,16 @@ function solve_height_potential(mesh::FaceMesh, image; f = Focal_Length)
     # Normalised divergence
     # divergence_direction is _FENCES_SIZED_
     divergence_direction = div_row + div_col
-    # divergence_direction .-= average(divergence_direction)
 
     ϕ_next = mesh.corners.ϕ
     max_update = Inf
-    old_update = Inf
     for i ∈ 1:1e6
-        old_update = max_update
-        ϕ_next, max_update, _, _ = propagate_poisson(ϕ_next, -divergence_direction)
+        ϕ_next, max_update = propagate_poisson(ϕ_next, -divergence_direction)
 
-        i % 1_000 == 1 &&
+        i % 250 == 1 &&
             println("Convergence horiz. Δ  at counter = $(i) max update = $(max_update)")
 
-        if abs(old_update - max_update) / old_update < 1e-5 || abs(max_update) <= 1e-6
+        if abs(max_update) <= 1e-6
             println(
                 "Convergence horiz. Δ stopped at counter = $(i) with max_update of $(max_update)",
             )
