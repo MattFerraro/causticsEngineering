@@ -25,7 +25,6 @@ mesh, imageBW, list_max_updates = engineer_caustics(image);
 length(list_max_updates)
 p = plot((log.(clamp01nan.(list_max_updates))))
 p
-save("ppp.png", map(clamp01nan, p))
 
 imageBW = Float64.(Gray.(image));
 Gray.(imageBW)

@@ -8,27 +8,13 @@ average(m::AbstractMatrix) = (sum(m) / length(m))
 """
 $(SIGNATURES)
 """
-<<<<<<< HEAD
-average(m::AbstractMatrix) = sum(m) / length(m)
-=======
 average_absolute(m::AbstractMatrix) = (sum(abs.(m)) / length(m))
->>>>>>> 9473c949cf07d0e9431c75b57947a2304ac33a97
 
 
 """
 $(SIGNATURES)
 """
-<<<<<<< HEAD
-average_absolute(m::AbstractMatrix) = sum(abs.(m)) / length(m)
-
-
-"""
-$(SIGNATURES)
-"""
-test_average_absolute(m::AbstractMatrix) = average_absolute(m) < 1e10
-=======
 test_average_absolute(m::AbstractMatrix) = (average_absolute(m)) < 1e6
->>>>>>> 9473c949cf07d0e9431c75b57947a2304ac33a97
 
 
 """

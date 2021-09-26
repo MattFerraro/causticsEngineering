@@ -25,11 +25,7 @@ function engineer_caustics(source_image)
     max_update = Inf
     list_max_update = []
     counter = 0
-<<<<<<< HEAD
-    while (abs(max_update) > 1e-6 && counter < 10)
-=======
     while (abs(max_update) > 1e-6 && counter < 4)
->>>>>>> 7bf9231000e40055c24642b532cd1017367b28d1
         counter += 1
 
         print(
@@ -41,15 +37,9 @@ function engineer_caustics(source_image)
             """,
         )
 
-<<<<<<< HEAD
-        ϕ = mesh.corners.ϕ
-        ε, max_update, list_new_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
-        append!(list_max_update, list_new_update)
-=======
         start_r = deepcopy(mesh.corners.r)
         start_c = deepcopy(mesh.corners.c)
         start_ϕ = deepcopy(mesh.corners.ϕ)
->>>>>>> 7bf9231000e40055c24642b532cd1017367b28d1
 
         ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
         marginal_change = mesh.corners.ϕ - start_ϕ
@@ -137,11 +127,7 @@ function solve_velocity_potential!(mesh, image, prefix)
     old_update = 2 * new_update
     while (
         1e-6 < new_update < 1.5 * min_update &&
-<<<<<<< HEAD
-        # 1e-4 < (old_update - new_update) / old_update &&
-=======
         1e-5 < (old_update - new_update) / old_update &&
->>>>>>> 7bf9231000e40055c24642b532cd1017367b28d1
         count < 10_000
     )
         count += 1

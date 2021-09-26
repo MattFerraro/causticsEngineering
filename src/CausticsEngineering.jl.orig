@@ -44,16 +44,11 @@ export
     FieldVertex3D,
     FaceMesh,
 
-<<<<<<< HEAD
-    # Math
-    average, average_absolute,
-=======
     # math
     average,
     average_absolute,
     laplacian,
     ∇,
->>>>>>> 9473c949cf07d0e9431c75b57947a2304ac33a97
 
     # Mesh
     create_solid,

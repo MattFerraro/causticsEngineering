@@ -330,7 +330,6 @@ CausticsEngineering.field_summary(origϕ)
 CausticsEngineering.field_summary(origLϕ)
 CausticsEngineering.field_summary(origδ)
 
-<<<<<<< HEAD
 
 ######################## March mesh
 dfx, dfy = ∇(mesh.corners.ϕ)
@@ -444,14 +443,6 @@ avgay/length(origmesh.nodes)
 
 
 
-=======
-CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 1:end-1] - origϕ')
-CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 1:end-1] - origϕ')
-CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 2:end] - origϕ')
-CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 2:end] - origϕ')
-m = (mesh.corners.ϕ[1:end-1, 1:end-1] + mesh.corners.ϕ[2:end, 1:end-1] + mesh.corners.ϕ[1:end-1, 2:end] + mesh.corners.ϕ[2:end, 2:end]) / 4.;
-CausticsEngineering.field_summary(m - origϕ')
->>>>>>> 7bf9231000e40055c24642b532cd1017367b28d1
 
 
 
