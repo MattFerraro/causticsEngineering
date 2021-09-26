@@ -20,40 +20,22 @@ function engineer_caustics(source_image)
     # imageBW is normalised to have 1 unit per pixel on average.
     imageBW /= average(imageBW)
 
-<<<<<<< HEAD
-    marginal_change = nothing
-    max_update = Inf
-    list_max_update = []
-    counter = 0
-    while (abs(max_update) > 1e-6 && counter < 5)
-=======
     marginal_change_top = marginal_change_bot = nothing
     max_update_top = marginal_change_top = Inf
     counter = 0
     while (abs(max_update_top+marginal_change_bot) > 1e-6 && counter < 10_000)
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
         counter += 1
 
         print(
             """
-<<<<<<< HEAD
-            ================================================================================================================
-            STARTING ITERATION $(counter):
-                starting ϕ field = $(field_summary(mesh.corners.ϕ))
-=======
           ================================================================================================================
           STARTING ITERATION $(counter):
               starting ϕ TOP field = $(field_summary(mesh.corners.ϕ_top))
               starting ϕ BOT field = $(field_summary(mesh.corners.ϕ_bot))
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
 
             """,
         )
 
-<<<<<<< HEAD
-        ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
-        marginal_change = mesh.corners.ϕ - start_ϕ
-=======
         ϕ_top = mesh.corners.ϕ_top
         ε_top, max_update_top = solve_velocity_potential!(mesh.corners.ϕ_top, imageBW/2., "it$(counter)_top")
         marginal_change_top = mesh.corners.ϕ_top - ϕ_top
@@ -61,21 +43,11 @@ function engineer_caustics(source_image)
         ϕ_bot = mesh.corners.ϕ_bot
         ε_bot, max_update_bot = solve_velocity_potential!(mesh.corners.ϕ_bot, imageBW/2., "it$(counter)_bot")
         marginal_change_bot = mesh.corners.ϕ_bot - ϕ_bot
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
 
         print(
             """
 
             RESULT AT ITERATION $(counter):
-<<<<<<< HEAD
-                Luminosity error = $(field_summary(ε))
-                Vertical move max update = $(max_update)
-                Marginal change = $(field_summary(marginal_change))
-                end ϕ field = $(field_summary(mesh.corners.ϕ))
-            ================================================================================================================
-
-            """,
-=======
                 TOP
                 Luminosity error = $(field_summary(ε_top))
                 Vertical move max update = $(max_update_top)
@@ -92,19 +64,11 @@ function engineer_caustics(source_image)
             ================================================================================================================
 
           """,
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
         )
         plot_as_quiver(mesh.corners.ϕ_top, n_steps = 50, scale = height / 10, max_length = height / 20)
         average_absolute(marginal_change_top + marginal_change_bot) < 1e-4 && break
     end
 
-<<<<<<< HEAD
-    println("\nSTARTING HORIZONTAL DISPERSION ---")
-    ϕ_next, max_update = solve_horizontal_dispersion(mesh, imageBW; f = Focal_Length)
-
-    # Move the around a nil average.
-    mesh.corners.ϕ .= ϕ_next .- average(ϕ_next)
-=======
     println("\nSTARTING HORIZONTAL ITERATION ---")
 
     println("\t Horizontal max update TOP = $(max_update_top) /  BOT = $(max_update_bot)")
@@ -112,7 +76,6 @@ function engineer_caustics(source_image)
     # Move the around a nil average.
     mesh.corners.ϕ_top .-= average(mesh.corners.ϕ_top)
     mesh.corners.ϕ_bot .-= average(mesh.corners.ϕ_bot)
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
 
     return mesh, imageBW
 end
@@ -132,12 +95,8 @@ function solve_velocity_potential!(mesh, image, prefix)
     # Illumination only depends on the position of the corners, not their heights. ϕ is not relevant.
     # Get the area of each individual pixel as stretch/shrunk on the lens. Area = energy.
     # _FENCES_SIZED_
-<<<<<<< HEAD
-    lens_pixels_area = get_lens_pixels_area(mesh)
-=======
     # Illumination only depends on the position of the corners, not their heights. ϕ is not relevant.
     lens_pixels_area_top, lens_pixels_area_bot = get_lens_pixels_area(mesh)
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
 
     # Positive error => the triangle needs to shrink (less light). Enforce nil average error.
     ε_top = zeros(Float64, height, width)
@@ -150,15 +109,6 @@ function solve_velocity_potential!(mesh, image, prefix)
     ε_bot[1:end-1, 1:end-1] = Float64.(lens_pixels_area_bot - image/2.)
     ε_bot .-= average(ε_bot)
 
-<<<<<<< HEAD
-    # Start with a clean, flat potential field.
-    ϕ_next = zeros(Float64, height + 1, width + 1)
-    count = 0
-    while 1e-5 < new_update && count < 3_000
-        count += 1
-
-        ϕ_next, new_update = propagate_poisson(ϕ_next, ε)
-=======
     println("""
             solve_velocity_potential! before loop:
                 $(field_summary(lens_pixels_area_top, "Pixel area"))
@@ -261,21 +211,12 @@ function solve_velocity_potential!(mesh, image, prefix)
 
             ϕ_b4_top = copy(mesh.corners.ϕ_top)
             ϕ_b4_bot = copy(mesh.corners.ϕ_bot)
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
         end
     end
 
     # Now we need to march the mesh row,col corner locations according to this gradient.
-<<<<<<< HEAD
-    r_next, c_next, δ = march_mesh(mesh, ϕ_next)
-    mesh.corners.r .= r_next
-    mesh.corners.c .= c_next
-    mesh.corners.ϕ .= ϕ_next
-
-=======
     δ_top = march_mesh!(mesh, :top)
     δ_bot = march_mesh!(mesh, :bottom)
->>>>>>> fd50f9e13d65a72284ebd37e06443a0c788acb68
     return ε, new_update
 end
 
