@@ -4,10 +4,9 @@ gr()
 
 using CausticsEngineering
 
-image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
-
 image = Images.load("./examples/personal/slashdot.jpg"); # Check current working directory with pwd()
 
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/goose.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/salvador_dali_1.jpg"); # Check current working directory with pwd()
@@ -236,7 +235,7 @@ Luminosity:
 ## STEPPING
 
 using Revise, Debugger, Images, Plots;
-gr();
+gr()
 
 using CausticsEngineering
 
@@ -331,7 +330,7 @@ CausticsEngineering.field_summary(origϕ)
 CausticsEngineering.field_summary(origLϕ)
 CausticsEngineering.field_summary(origδ)
 
-
+CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 1:end-1] - origϕ')
 ######################## March mesh
 dfx, dfy = ∇(mesh.corners.ϕ)
 CausticsEngineering.field_summary(dfx)
