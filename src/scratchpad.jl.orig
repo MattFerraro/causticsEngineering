@@ -4,9 +4,10 @@ gr()
 
 using CausticsEngineering
 
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+
 image = Images.load("./examples/personal/slashdot.jpg"); # Check current working directory with pwd()
 
-image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/goose.jpg"); # Check current working directory with pwd()
 
 image = Images.load("./examples/personal/salvador_dali_1.jpg"); # Check current working directory with pwd()
@@ -87,21 +88,6 @@ triangle_dict, vertex_dict, triangle_index, vertex_index =
     create_solid(mesh; bottom_distance = Bottom_Offset, top_distance = Top_Offset)
 
 
-# Can be done in 2 steps
-#
-# triangle_dict, vertex_dict = create_solid_as_dict(
-#     mesh;
-#     bottom_distance = Bottom_Offset,
-#     top_distance = Top_Offset
-# )
-#
-# # Generate array or coordinates and indices usable to create traditional mesh objects
-# _, _, triangle_index, vertex_index = create_solid(
-#     triangle_dict,
-#     vertex_dict;
-#     bottom_distance = Bottom_Offset,
-#     top_distance = Top_Offset,
-#     )
 
 # Area of all the distorted pixels
 am = CausticsEngineering.get_area_corners(mesh)
@@ -179,6 +165,29 @@ MeshViz.viz(cat_mesh2D)
 
 
 
+<<<<<<< HEAD
+# engineer_caustics
+image = Images.load("./examples/cat_posing.jpg"); # Check current working directory with pwd()
+imageBW = Float64.(Gray.(image));
+imageBW /= average(imageBW);
+height, width = size(imageBW)
+mesh = CausticsEngineering.FaceMesh(height, width);
+
+# solve_velocity_potential
+mesh.corners.ϕ
+fill!(mesh.corners.ϕ, 0.);
+
+height, width = size(mesh.corners.ϕ)
+
+area_distorted_corners = CausticsEngineering.get_area_corners(mesh)
+error_luminosity = Float64.(area_distorted_corners - imageBW)
+error_luminosity = error_luminosity .- average(error_luminosity)
+
+sum(error_luminosity)
+average(error_luminosity)
+average_absolute(error_luminosity)
+
+=======
 
 
 
@@ -230,7 +239,7 @@ Luminosity:
 ## STEPPING
 
 using Revise, Debugger, Images, Plots;
-gr()
+gr();
 
 using CausticsEngineering
 
@@ -325,12 +334,11 @@ CausticsEngineering.field_summary(origϕ)
 CausticsEngineering.field_summary(origLϕ)
 CausticsEngineering.field_summary(origδ)
 
-CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 1:end-1] - origϕ')
-CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 1:end-1] - origϕ')
-CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 2:end] - origϕ')
-CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 2:end] - origϕ')
-m = (mesh.corners.ϕ[1:end-1, 1:end-1] + mesh.corners.ϕ[2:end, 1:end-1] + mesh.corners.ϕ[1:end-1, 2:end] + mesh.corners.ϕ[2:end, 2:end]) / 4.;
-CausticsEngineering.field_summary(m - origϕ')
+
+
+
+
+
 
 
 
@@ -520,3 +528,4 @@ padded_m[begin+1:end-1, begin+1+1:end-1+1] - 4.0 * padded_m[begin+1:end-1, begin
 
 sum(CausticsEngineering.laplacian(m))
 sum(orig_laplacian(m))
+>>>>>>> 9473c949cf07d0e9431c75b57947a2304ac33a97
