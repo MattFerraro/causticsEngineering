@@ -23,8 +23,9 @@ function engineer_caustics(source_image)
 
     marginal_change = nothing
     max_update = Inf
+    list_max_update = []
     counter = 0
-    while (abs(max_update) > 1e-6 && counter < 10_000)
+    while (abs(max_update) > 1e-6 && counter < 10)
         counter += 1
 
         print(
@@ -37,7 +38,8 @@ function engineer_caustics(source_image)
         )
 
         ϕ = mesh.corners.ϕ
-        ε, max_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
+        ε, max_update, list_new_update = solve_velocity_potential!(mesh, imageBW, "it$(counter)")
+        append!(list_max_update, list_new_update)
 
         marginal_change = mesh.corners.ϕ - ϕ
 
@@ -66,7 +68,7 @@ function engineer_caustics(source_image)
     # Move the around a nil average.
     mesh.corners.ϕ .-= average(mesh.corners.ϕ)
 
-    return mesh, imageBW
+    return mesh, imageBW, list_max_update
 end
 
 
@@ -112,14 +114,16 @@ function solve_velocity_potential!(mesh, image, prefix)
     ϕ_b4 = copy(mesh.corners.ϕ)
     count = 0
     min_update = new_update = 10_000
+    list_new_update = []
     old_update = 2 * new_update
     while (
-        1e-5 < new_update < 1.5 * min_update &&
-        1e-4 < (old_update - new_update) / old_update &&
+        1e-6 < new_update < 1.5 * min_update &&
+        # 1e-4 < (old_update - new_update) / old_update &&
         count < 10_000
     )
         count += 1
         old_update = new_update
+        push!(list_new_update, new_update)
         min_update = min(min_update, new_update)
 
         new_update, ∇²ϕ_est, δ = propagate_poisson!(mesh.corners.ϕ, ε)
@@ -146,7 +150,7 @@ function solve_velocity_potential!(mesh, image, prefix)
 
     # Now we need to march the mesh row,col corner locations according to this gradient.
     δ = march_mesh!(mesh)
-    return ε, new_update
+    return ε, new_update, list_new_update
 end
 
 
@@ -161,9 +165,10 @@ $(SIGNATURES)
 function march_mesh!(mesh::FaceMesh)
 
     # Calculate the gradient of the velocity potential and reverse its direction.
-    mesh.corners.vr, mesh.corners.vc = ∇(mesh.corners.ϕ)
-    mesh.corners.vr .*= -1.0
-    mesh.corners.vc .*= -1.0
+    ∇ϕᵤ, ∇ϕᵥ = ∇(mesh.corners.ϕ)
+    mesh.corners.vr = -∇ϕᵤ
+    mesh.corners.vc = -∇ϕᵥ
+
 
     # Clean up the mesh borders
     reset_border_values!(mesh.corners)
