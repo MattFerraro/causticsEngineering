@@ -299,15 +299,14 @@ function march_mesh!(mesh::FaceMesh, side::Union{:top, :bottom})
     println(
         """
 
-    March mesh with correction_ratio δ = $(δ)
-        $(field_summary(mesh.corners.vr, "∇u"))
-        $(field_summary(mesh.corners.vc, "∇v"))
-        $(field_summary(mesh_r - mesh.corners.r , "new mesh changes on row"))
-        $(field_summary(mesh_c - mesh.corners.c, "new mesh changes on col"))
-        $(field_summary(mesh_r - mesh.corners.rows_numbers , "total mesh changes on row"))
-        $(field_summary(mesh_c - mesh.corners.cols_numbers, "total mesh changes on col"))
-
-        """,
+        March mesh with correction_ratio δ = $(δ)
+            $(field_summary(mesh.corners.vr, "∇u"))
+            $(field_summary(mesh.corners.vc, "∇v"))
+            $(field_summary(mesh_r - mesh.corners.r , "new mesh changes on row"))
+            $(field_summary(mesh_c - mesh.corners.c, "new mesh changes on col"))
+            $(field_summary(mesh_r - mesh.corners.rows_numbers , "total mesh changes on row"))
+            $(field_summary(mesh_c - mesh.corners.cols_numbers, "total mesh changes on col"))
+            """,
     )
 
     return δ
