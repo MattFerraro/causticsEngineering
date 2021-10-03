@@ -1,8 +1,7 @@
 """
 $(TYPEDEF)
 
-Coordinates as row (vertical), columns (horizontal). Represent the data of each top corner of a pixel.
-Topleft for top triangle, bottomleft for bottom triangle
+Coordinates as row (vertical), columns (horizontal). Represent the data of each topleft corner of a pixel.
 vr, vc: velocity vector of that corner.
 Warning: posts/fences: One more corner than number of pixels.
 """
@@ -96,8 +95,7 @@ mutable struct FieldVertex3D
     vc::AbstractMatrix{Float64}
 
     # Velocity potential at each corner
-    ϕ_top::AbstractMatrix{Float64}
-    ϕ_bot::AbstractMatrix{Float64}
+    ϕ::AbstractMatrix{Float64}
 
     rows_numbers::AbstractMatrix{Float64}
     cols_numbers::AbstractMatrix{Float64}
@@ -114,10 +112,9 @@ function FieldVertex3D(height, width)
     mvr = zeros(Float64, height + 1, width + 1)
     mvc = zeros(Float64, height + 1, width + 1)
 
-    mϕ_top = zeros(Float64, height , width )
-    mϕ_bot = zeros(Float64, height , width )
+    mϕ = zeros(Float64, height + 1, width + 1)
 
-    fv = FieldVertex3D((height, width), mr, mc, mvr, mvc, mϕ_top, mϕ_bot, rows_numbers, cols_numbers)
+    fv = FieldVertex3D((height, width), mr, mc, mvr, mvc, mϕ, rows_numbers, cols_numbers)
     reset_border_values!(fv)
     return fv
 end
@@ -155,14 +152,13 @@ $(SIGNATURES)
 function Vertex3D(fv::FieldVertex3D, row, col)
     height, width = size(fv)
 
-    if (1 <= row <= height ) && (1 <= col <= width)
+    if (1 <= row <= height + 1) && (1 <= col <= width + 1)
         Vertex3D(
             fv.r[row, col],
             fv.c[row, col],
             fv.vr[row, col],
             fv.vc[row, col],
-            fv.ϕ_top[min(height, row), col(width, col)],
-            fv.ϕ_bot[min(height, row), col(width, col)],
+            fv.ϕ[row, col],
         )
     else
         missing
@@ -340,8 +336,10 @@ has been shifted and flexed around.
 function get_lens_pixels_area(mesh::FaceMesh)
     height, width = size(mesh)
 
-    top_tri_area = get_lens_pixels_area(mesh, :top)
-    bot_tri_area =get_lens_pixels_area(mesh, :bottom)
+    top_tri_area =
+        area.([triangle3D(mesh, row, col, :top) for row ∈ 1:height, col ∈ 1:width])
+    bot_tri_area =
+        area.([triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width])
 
     total_area = top_tri_area + bot_tri_area
 
@@ -350,19 +348,8 @@ function get_lens_pixels_area(mesh::FaceMesh)
 
     @assert abs(sum(luminosity_pixels) - height * width) < 1.0 "Total lens luminosity is incorrect"
 
-    # return luminosity_pixels
-    return top_tri_area, bot_tri_area
+    return luminosity_pixels
 end
-
-
-function get_lens_pixels_area(mesh::FaceMesh, side::Union{:top, :bottom})
-    height, width = size(mesh)
-
-    # return luminosity_pixels
-    return area.([triangle3D(mesh, row, col, side) for row ∈ 1:height, col ∈ 1:width])
-end
-
-
 
 
 """
@@ -376,7 +363,7 @@ function field_summary(field, fieldname)
     avg = round(average(field), sigdigits = 4)
     abs = round(average_absolute(field), sigdigits = 4)
 
-    return """$(fieldname) (Sum/Min/Max/Avg/Avg abs.): $(s) / $(min) / $(max) / $(avg) / $(abs)"""
+    return """$(fieldname) (Sum/Max/Min/Avg/Avg abs.): $(s) / $(max) / $(min) / $(avg) / $(abs)"""
 end
 
 

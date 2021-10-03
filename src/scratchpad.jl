@@ -20,11 +20,7 @@ image = Images.load("./examples/personal/caricature.jpg"); # Check current worki
 image = Images.load("./examples/personal/portrait.jpg"); # Check current working directory with pwd()
 image = Images.load("./examples/personal/bilal.jpg"); # Check current working directory with pwd()
 
-mesh, imageBW, list_max_updates = engineer_caustics(image);
-
-length(list_max_updates)
-p = plot((log.(clamp01nan.(list_max_updates))))
-p
+mesh, imageBW = engineer_caustics(image);
 
 imageBW = Float64.(Gray.(image));
 Gray.(imageBW)
@@ -317,7 +313,7 @@ CausticsEngineering.field_summary(origerror_luminosity)
 CausticsEngineering.field_summary(error_luminosity - origerror_luminosity')
 
 
-######################## Propagation
+######################## Distance to Laplacian & propagate
 max_update, Lϕ, δ = CausticsEngineering.propagate_poisson!(mesh.corners.ϕ, error_luminosity);
 CausticsEngineering.field_summary(mesh.corners.ϕ)
 CausticsEngineering.field_summary(Lϕ)
@@ -330,118 +326,17 @@ CausticsEngineering.field_summary(origLϕ)
 CausticsEngineering.field_summary(origδ)
 
 CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 1:end-1] - origϕ')
-######################## March mesh
-dfx, dfy = ∇(mesh.corners.ϕ)
-CausticsEngineering.field_summary(dfx)
-CausticsEngineering.field_summary(dfy)
-mesh.corners.vr = -dfx
-mesh.corners.vc = -dfy
-CausticsEngineering.field_summary(mesh.corners.vr)
-CausticsEngineering.field_summary(mesh.corners.vc)
-
-dfx2, dfy2 = CausticsEngineering.orig_∇(origϕ)
-CausticsEngineering.field_summary(dfx2)
-CausticsEngineering.field_summary(dfy2)
-
-
-# Min t
-list_triangles = vcat(
-    [CausticsEngineering.triangle3D(mesh, row, col, :top) for row ∈ 1:h, col ∈ 1:w],
-    [CausticsEngineering.triangle3D(mesh, row, col, :bottom) for row ∈ 1:h, col ∈ 1:w],
-)
-
-list_maximum_t = [t for t ∈ CausticsEngineering.find_maximum_t.(list_triangles) if !isnothing(t) && t > 0.0]
-δ = minimum(list_maximum_t)
-
-mesh_r = copy(mesh.corners.r)
-mesh_c = copy(mesh.corners.c)
-δ = minimum(list_maximum_t) / 2.0
-mesh.corners.r .-= δ * mesh.corners.vr
-mesh.corners.c .-= δ * mesh.corners.vc
-
-println(
-    """
-
-March mesh with correction_ratio δ = $(δ)
-    $(CausticsEngineering.field_summary(mesh.corners.vr, "∇u"))
-    $(CausticsEngineering.field_summary(mesh.corners.vc, "∇v"))
-    $(CausticsEngineering.field_summary(mesh_r - mesh.corners.r , "new mesh changes on row"))
-    $(CausticsEngineering.field_summary(mesh_c - mesh.corners.c, "new mesh changes on col"))
-    $(CausticsEngineering.field_summary(mesh_r - mesh.corners.rows_numbers , "total mesh changes on row"))
-    $(CausticsEngineering.field_summary(mesh_c - mesh.corners.cols_numbers, "total mesh changes on col"))
-
-    """,
-)
-
-
-velocities = Matrix{CausticsEngineering.Point3D}(undef, w+1, h+1)
-fill!(velocities, CausticsEngineering.Point3D(0.0, 0.0, 0.0, 0.0, 0.0))
-
-for x ∈ 1:w-1, y ∈ 1:h-1
-    velocities[x, y] = CausticsEngineering.Point3D(-dfx2[x, y], -dfy2[x, y], 0.0, 0.0, 0.0)
-end
-
-min_t = 10000
-triangleCount = 1
-p1 = CausticsEngineering.Point3D(0., 0., 0., 0., 0.)
-p2 = CausticsEngineering.Point3D(0., 0., 0., 0., 0.)
-p3 = CausticsEngineering.Point3D(0., 0., 0., 0., 0.)
-v1 = CausticsEngineering.Point3D(0., 0., 0., 0., 0.)
-v2 = CausticsEngineering.Point3D(0., 0., 0., 0., 0.)
-v3 = CausticsEngineering.Point3D(0., 0., 0., 0., 0.)
-for triangle in origmesh.triangles
-    p1 = origmesh.nodes[triangle.pt1]
-    p2 = origmesh.nodes[triangle.pt2]
-    p3 = origmesh.nodes[triangle.pt3]
-
-    v1 = velocities[p1.ix, p1.iy]
-    v2 = velocities[p2.ix, p2.iy]
-    v3 = velocities[p3.ix, p3.iy]
-
-    t = CausticsEngineering.findT(p1, p2, p3, v1, v2, v3)
-
-    if !isnothing(t)
-        min_t = min(min_t, t)
-    end
-
-    triangleCount += 1
-end
-
-p1
-p2
-p3
-v1
-v2
-v3
-
-min_t
-
-size(origmesh.nodes)
-avgmx = 0.
-avgmy = 0.
-avgax = 0.
-avgay = 0.
-for point in origmesh.nodes
-    v = velocities[point.ix, point.iy]
-    px = point.x
-    py = point.y
-    point.x = v.x * min_t/2 + point.x
-    point.y = v.y * min_t/2 + point.y
-
-    avgmx += point.x - px
-    avgmy += point.y - py
-    avgax += abs(point.x - px)
-    avgay += abs(point.y - py)
-end
-
-avgmx/length(origmesh.nodes)
-avgmy/length(origmesh.nodes)
-avgax/length(origmesh.nodes)
-avgay/length(origmesh.nodes)
-
-
-
-
+CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 1:end-1] - origϕ')
+CausticsEngineering.field_summary(mesh.corners.ϕ[1:end-1, 2:end] - origϕ')
+CausticsEngineering.field_summary(mesh.corners.ϕ[2:end, 2:end] - origϕ')
+m =
+    (
+        mesh.corners.ϕ[1:end-1, 1:end-1] +
+        mesh.corners.ϕ[2:end, 1:end-1] +
+        mesh.corners.ϕ[1:end-1, 2:end] +
+        mesh.corners.ϕ[2:end, 2:end]
+    ) / 4.0;
+CausticsEngineering.field_summary(m - origϕ')
 
 
 
