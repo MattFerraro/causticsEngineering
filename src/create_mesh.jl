@@ -1,6 +1,6 @@
 # Currently unused.
 const grid_definition = 512
-
+const target_convergence = 0.00001
 
 """
 $(SIGNATURES)
@@ -433,6 +433,7 @@ function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
     end
 
     # saveObj(mesh, "gateau.obj")
+    return min_t
 end
 
 
@@ -469,7 +470,7 @@ function oneIteration(meshy, img, suffix)
     LJ = getPixelArea(meshy)
     D = Float64.(LJ - img)
     # Shift D to ensure its sum is zero
-    D .-= sum(D) / (512 * 512)
+    D .-= sum(D) / (grid_definition * grid_definition)
 
     # Save the loss image as a png
     println(minimum(D))
@@ -485,7 +486,8 @@ function oneIteration(meshy, img, suffix)
     width, height = size(img)
 
     ϕ = zeros(width, height)
-
+    
+    max_update = 0
     println("Building Phi")
     for i = 1:10000
         max_update = relax!(ϕ, D)
@@ -499,7 +501,7 @@ function oneIteration(meshy, img, suffix)
             println(max_update)
         end
 
-        if max_update < 0.00001
+        if max_update < target_convergence
             println("Convergence reached at step $(i) with max_update of $(max_update)")
             break
         end
@@ -515,8 +517,8 @@ function oneIteration(meshy, img, suffix)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
-    marchMesh!(meshy, ϕ)
-# saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy=true)
+    return marchMesh!(meshy, ϕ)
+    # saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy=true)
 end
 
 
@@ -760,7 +762,7 @@ function findSurface(mesh, image, f, imgWidth)
         if i % 500 == 0
             println(max_update)
         end
-        if max_update < 0.00001
+        if max_update < target_convergence
             println("Convergence reached at step $(i) with max_update of $(max_update)")
             break
         end
@@ -898,7 +900,7 @@ end
 """
 $(SIGNATURES)
 """
-function engineer_caustics(img)
+function engineer_caustics(img, output_file_name="./examples/original_image.obj")
     img = Gray.(img)
     img2 = permutedims(img) * 1.0
     width, height = size(img2)
@@ -915,12 +917,19 @@ function engineer_caustics(img)
     # original image.
     img3 = img2 .* boost_ratio
 
-    oneIteration(meshy, img3, "it1")
-    oneIteration(meshy, img3, "it2")
-    oneIteration(meshy, img3, "it3")
-    oneIteration(meshy, img3, "it4")
-    # oneIteration(meshy, img3, "it5")
-    # oneIteration(meshy, img3, "it6")
+    last_min_t = Inf
+    for iteration = 1:50
+        println("Iteration $(iteration)")
+        current_min_t= oneIteration(meshy, img3, "it_$(iteration)")
+        if current_min_t <= 0.1
+            break
+        end
+        if last_min_t / current_min_t < 1.01
+            # improvement only 1 Percent 
+            break
+        end
+        last_min_t = current_min_t
+    end
 
     artifactSize = 0.1  # meters
     focalLength = 0.2 # meters
@@ -931,9 +940,9 @@ function engineer_caustics(img)
     solidMesh = solidify(meshy)
     saveObj!(
         solidMesh,
-        "./examples/original_image.obj",
-        scale=1 / 512 * artifactSize,
-        scalez=1 / 512.0 * artifactSize,
+        output_file_name,
+        scale=1 / grid_definition * artifactSize,
+        scalez=1 / grid_definition * artifactSize,
     )
 
     return meshy, img3
@@ -947,7 +956,7 @@ function main()
     @assert size(ARGS) == (1,) "Intented usage is: julia create_mesh.jl image.png"
 
     img = load(ARGS[1])
-    return engineer_caustics(img)
+    return engineer_caustics(img, string(ARGS[1][1:end-3], "obj"))
 end
 
 
