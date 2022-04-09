@@ -5,7 +5,7 @@ This repo is for generating 3D surface meshes that project caustic images. It is
 See the write-up [here](https://mattferraro.dev/posts/caustics-engineering)!
 
 # To install
-If you don't have the packages, run
+If you don't have the packages, run in this repo `julia`, and:
 ```julia
 using Pkg
 Pkg.activate(".")
