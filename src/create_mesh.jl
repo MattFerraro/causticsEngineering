@@ -1,5 +1,3 @@
-# Currently unused.
-const grid_definition = 512
 const target_convergence = 0.00001
 
 """
@@ -353,7 +351,7 @@ end
 """
 $(SIGNATURES)
 
-This function will take a `grid_definition x grid_definition` matrix and returns a `grid_definition x grid_definition` mesh.
+This function will take a matrix and returns a mesh.
 
 It currently takes the size of the matrix passed as argument.
 """
@@ -377,7 +375,7 @@ $(SIGNATURES)
 function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
 
-    imgWidth, imgHeight = size(ϕ)   # should be grid_definitionxgrid_definition
+    imgWidth, imgHeight = size(ϕ)
 
     # For each point in the mesh we need to figure out its velocity
     velocities = Matrix{Point3D}(undef, mesh.width, mesh.height)
@@ -465,12 +463,12 @@ end
 $(SIGNATURES)
 """
 function oneIteration(meshy, img, suffix)
-    # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
-    # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
+    # Remember meshy is (will be) sized just like the image
+    width, height = size(img)
     LJ = getPixelArea(meshy)
     D = Float64.(LJ - img)
     # Shift D to ensure its sum is zero
-    D .-= sum(D) / (grid_definition * grid_definition)
+    D .-= sum(D) / (width * height)
 
     # Save the loss image as a png
     println(minimum(D))
@@ -482,8 +480,6 @@ function oneIteration(meshy, img, suffix)
     # plotVAsQuiver(∇Lᵤ, ∇Lᵥ, stride=10, scale=10, max_length=200)
     # println("okay")
     # return
-
-    width, height = size(img)
 
     ϕ = zeros(width, height)
     
@@ -913,8 +909,7 @@ function engineer_caustics(img, output_file_name="./examples/original_image.obj"
     image_sum = sum(img2)
     boost_ratio = mesh_sum / image_sum
 
-    # img3 is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
-    # original image.
+    # img3 is normalised to the same (sort of) _energy_ as the original image.
     img3 = img2 .* boost_ratio
 
     last_min_t = Inf
@@ -941,8 +936,8 @@ function engineer_caustics(img, output_file_name="./examples/original_image.obj"
     saveObj!(
         solidMesh,
         output_file_name,
-        scale=1 / grid_definition * artifactSize,
-        scalez=1 / grid_definition * artifactSize,
+        scale=1 / width * artifactSize,
+        scalez=1 / height * artifactSize,
     )
 
     return meshy, img3
