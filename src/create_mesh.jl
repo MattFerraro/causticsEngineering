@@ -555,36 +555,39 @@ $(SIGNATURES)
 """
 function solidify(inputMesh, offset=100)
     width = inputMesh.width
-    height = inputMesh.height
-    totalNodes = width * height * 2
+    depth = inputMesh.height
+    totalNodes = width * depth * 2
     nodeList = Vector{Point3D}(undef, totalNodes)
-    nodeArrayTop = Matrix{Point3D}(undef, width, height)
-    nodeArrayBottom = Matrix{Point3D}(undef, width, height)
 
     # imagine a 4x4 image. 4 * 2 + 2 * 2 = 12
-    numEdgeNodes = width * 2 + (height - 2) * 2
+    numEdgeNodes = width * 2 + (depth - 2) * 2
 
-    numTrianglesTop = (width - 1) * (height - 1) * 2
-    numTrianglesBottom = numTrianglesTop
+    numTrianglesTop = (width - 1) * (depth - 1) * 2
+    numTrianglesBottom = numEdgeNodes
     numTrianglesEdges = numEdgeNodes * 2
 
     totalTriangles = numTrianglesBottom + numTrianglesTop + numTrianglesEdges
 
-    println("Specs: $(width)  $(height)  $(totalNodes)  $(numEdgeNodes)  $(numTrianglesBottom) $(totalTriangles)")
+    println("Specs: $(width)x$(depth). $(totalNodes) nodes, $(numEdgeNodes) edges, $(numTrianglesBottom), faces on bottom, $(totalTriangles) faces total")
 
+    centerpoint_idx = 0
     # Build the bottom surface
     count = 1
-    for y = 1:height
+    for y = 1:depth
         for x = 1:width
-            newPoint = Point3D(x, y, -offset, x, y)
-            nodeList[count] = newPoint
-            nodeArrayBottom[x, y] = newPoint
+            # most of them are not used, but just the centerpoint for bottom
+            nodeList[count] = Point3D(x, y, -offset, x, y)
+            if y == floor(depth/2) && x == floor(width/2)
+                centerpoint_idx = count
+            end
             count += 1
         end
     end
+    
+    println("Found a centerpoint at ($(nodeList[centerpoint_idx].x), $(nodeList[centerpoint_idx].y))")
 
     # Copy in the top surface
-    for y = 1:height
+    for y = 1:depth
         for x = 1:width
             node = inputMesh.nodeArray[x, y]
             copiedPoint = Point3D(node.x, node.y, node.z, node.ix, node.iy)
@@ -596,7 +599,6 @@ function solidify(inputMesh, offset=100)
             end
 
             nodeList[count] = copiedPoint
-            nodeArrayTop[x, y] = copiedPoint
             count += 1
         end
     end
@@ -604,37 +606,16 @@ function solidify(inputMesh, offset=100)
     println("We now have $(count - 1) valid nodes")
 
     triangles = Vector{Triangle}(undef, totalTriangles)
-    # Build the triangles for the bottom surface
     count = 1
-    for y = 1:(height - 1)
-        for x = 1:(width - 1)
-          # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x
-            index_ur = index_ul + 1
-
-            index_ll = y * width + x
-            index_lr = index_ll + 1
-
-            triangles[count] = Triangle(index_ul, index_ll, index_ur)
-            count += 1
-            triangles[count] = Triangle(index_lr, index_ur, index_ll)
-            count += 1
-        end
-    end
-
-    println("We've filled up $(count - 1) triangles")
-    if count != numTrianglesBottom + 1
-        println("Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom + 1)")
-        end
 
     # Build the triangles for the top surface
-    for y = 1:(height - 1)
+    for y = 1:(depth - 1)
         for x = 1:(width - 1)
           # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x + totalNodes / 2
+            index_ul = (y - 1) * width + x + (width*depth)
             index_ur = index_ul + 1
 
-            index_ll = y * width + x + totalNodes / 2
+            index_ll = y * width + x + (width*depth)
             index_lr = index_ll + 1
 
             triangles[count] = Triangle(index_ul, index_ur, index_ll)
@@ -644,58 +625,48 @@ function solidify(inputMesh, offset=100)
         end
     end
 
-    println("We've filled up $(count - 1) triangles")
-
-    # Build the triangles to close the mesh
-    x = 1
-    for y = 1:(height - 1)
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = y * width + x
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ul, ur)
-        count += 1
-    triangles[count] = Triangle(ur, lr, ll)
-        count += 1
+    println("We've filled up $(count - 1) top triangles")
+    
+    # Build the Side triangles to close the mesh
+    for x = [1, width]
+        for y = 1:(depth - 1)
+            ll = (y - 1) * width + x
+            ul = ll + (width * depth)
+            lr = y * width + x
+            ur = lr + (width * depth)
+            triangles[count] = Triangle(ll, ul, ur)
+            count += 1
+            triangles[count] = Triangle(ur, lr, ll)
+            count += 1
+            triangles[count] = Triangle(lr, ll, centerpoint_idx)
+            count += 1
+        end
     end
 
-    x = width
-    for y = 1:(height - 1)
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = y * width + x
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ur, ul)
-        count += 1
-        triangles[count] = Triangle(ur, ll, lr)
-        count += 1
+    for y = [1, depth]
+        for x = 2:width
+            ll = (y - 1) * width + x
+            ul = ll + (width * depth)
+            lr = (y - 1) * width + (x - 1)
+            ur = lr + (width * depth)
+            triangles[count] = Triangle(ll, ul, ur)
+            count += 1
+            triangles[count] = Triangle(ur, lr, ll)
+            count += 1
+            triangles[count] = Triangle(lr, ll, centerpoint_idx)
+            count += 1
+        end
     end
+    
+    println("We've filled up $(count - 1) triangles, including bottom")
 
-    y = 1
-    for x = 2:width
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ul, ur)
-        count += 1
-        triangles[count] = Triangle(ur, lr, ll)
-        count += 1
+    if count-1 != totalTriangles
+        println("Hmm aren't count and triangles bottom equal? $(count-1) vs $(totalTriangles)")
     end
-
-    y = height
-    for x = 2:width
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ur, ul)
-        count += 1
-        triangles[count] = Triangle(ur, ll, lr)
-        count += 1
-    end
-
-Mesh(nodeList, nodeArrayBottom, triangles, width, height)
+    
+    # Array not actually used by calling functions here
+    sumArray = Matrix{Point3D}(undef, width, depth)
+    Mesh(nodeList, sumArray, triangles, width, depth)
 end
 
 
