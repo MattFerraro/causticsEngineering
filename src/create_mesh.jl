@@ -907,8 +907,8 @@ function engineer_caustics(img, output_file_name="./examples/original_image.obj"
     saveObj!(
         solidMesh,
         output_file_name,
-        scale=1 / width * artifactSize,
-        scalez=1 / height * artifactSize,
+        scale=1000 / width * artifactSize,
+        scalez=1000 / height * artifactSize,
     )
 
     return meshy, img3
