@@ -4,13 +4,19 @@ This repo is for generating 3D surface meshes that project caustic images. It is
 
 See the write-up [here](https://mattferraro.dev/posts/caustics-engineering)!
 
+# To install
+If you don't have the packages, run in this repo `julia`, and:
+```julia
+using Pkg
+Pkg.activate(".")
+Pkg.instantiate()
+Pkg.precompile() 
+```
+
 # To Run
 
-To run the cat example from the blogpost, run line by line from ` src/scratchpad.jl`.
-
-_OR_ from the command line.
+To run the cat example from the blogpost, run the file without an image path.
 
 ```
-julia ./run.jl"
+julia ./run.jl [path-to-image.png]
 ```
-The image file is currently hard-coded.

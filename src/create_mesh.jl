@@ -1,6 +1,4 @@
-# Currently unused.
-const grid_definition = 512
-
+const target_convergence = 0.00001
 
 """
 $(SIGNATURES)
@@ -353,7 +351,7 @@ end
 """
 $(SIGNATURES)
 
-This function will take a `grid_definition x grid_definition` matrix and returns a `grid_definition x grid_definition` mesh.
+This function will take a matrix and returns a mesh.
 
 It currently takes the size of the matrix passed as argument.
 """
@@ -377,7 +375,7 @@ $(SIGNATURES)
 function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
     ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
 
-    imgWidth, imgHeight = size(ϕ)   # should be grid_definitionxgrid_definition
+    imgWidth, imgHeight = size(ϕ)
 
     # For each point in the mesh we need to figure out its velocity
     velocities = Matrix{Point3D}(undef, mesh.width, mesh.height)
@@ -433,6 +431,7 @@ function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
     end
 
     # saveObj(mesh, "gateau.obj")
+    return min_t
 end
 
 
@@ -464,12 +463,12 @@ end
 $(SIGNATURES)
 """
 function oneIteration(meshy, img, suffix)
-    # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
-    # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
+    # Remember meshy is (will be) sized just like the image
+    width, height = size(img)
     LJ = getPixelArea(meshy)
     D = Float64.(LJ - img)
     # Shift D to ensure its sum is zero
-    D .-= sum(D) / (512 * 512)
+    D .-= sum(D) / (width * height)
 
     # Save the loss image as a png
     println(minimum(D))
@@ -482,10 +481,9 @@ function oneIteration(meshy, img, suffix)
     # println("okay")
     # return
 
-    width, height = size(img)
-
     ϕ = zeros(width, height)
-
+    
+    max_update = 0
     println("Building Phi")
     for i = 1:10000
         max_update = relax!(ϕ, D)
@@ -499,7 +497,7 @@ function oneIteration(meshy, img, suffix)
             println(max_update)
         end
 
-        if max_update < 0.00001
+        if max_update < target_convergence
             println("Convergence reached at step $(i) with max_update of $(max_update)")
             break
         end
@@ -515,8 +513,8 @@ function oneIteration(meshy, img, suffix)
     # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
 
     # Now we need to march the x,y locations in our mesh according to this gradient!
-    marchMesh!(meshy, ϕ)
-# saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy=true)
+    return marchMesh!(meshy, ϕ)
+    # saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy=true)
 end
 
 
@@ -555,36 +553,39 @@ $(SIGNATURES)
 """
 function solidify(inputMesh, offset=100)
     width = inputMesh.width
-    height = inputMesh.height
-    totalNodes = width * height * 2
+    depth = inputMesh.height
+    totalNodes = width * depth * 2
     nodeList = Vector{Point3D}(undef, totalNodes)
-    nodeArrayTop = Matrix{Point3D}(undef, width, height)
-    nodeArrayBottom = Matrix{Point3D}(undef, width, height)
 
     # imagine a 4x4 image. 4 * 2 + 2 * 2 = 12
-    numEdgeNodes = width * 2 + (height - 2) * 2
+    numEdgeNodes = width * 2 + (depth - 2) * 2
 
-    numTrianglesTop = (width - 1) * (height - 1) * 2
-    numTrianglesBottom = numTrianglesTop
+    numTrianglesTop = (width - 1) * (depth - 1) * 2
+    numTrianglesBottom = numEdgeNodes
     numTrianglesEdges = numEdgeNodes * 2
 
     totalTriangles = numTrianglesBottom + numTrianglesTop + numTrianglesEdges
 
-    println("Specs: $(width)  $(height)  $(totalNodes)  $(numEdgeNodes)  $(numTrianglesBottom) $(totalTriangles)")
+    println("Specs: $(width)x$(depth). $(totalNodes) nodes, $(numEdgeNodes) edges, $(numTrianglesBottom), faces on bottom, $(totalTriangles) faces total")
 
+    centerpoint_idx = 0
     # Build the bottom surface
     count = 1
-    for y = 1:height
+    for y = 1:depth
         for x = 1:width
-            newPoint = Point3D(x, y, -offset, x, y)
-            nodeList[count] = newPoint
-            nodeArrayBottom[x, y] = newPoint
+            # most of them are not used, but just the centerpoint for bottom
+            nodeList[count] = Point3D(x, y, -offset, x, y)
+            if y == floor(depth/2) && x == floor(width/2)
+                centerpoint_idx = count
+            end
             count += 1
         end
     end
+    
+    println("Found a centerpoint at ($(nodeList[centerpoint_idx].x), $(nodeList[centerpoint_idx].y))")
 
     # Copy in the top surface
-    for y = 1:height
+    for y = 1:depth
         for x = 1:width
             node = inputMesh.nodeArray[x, y]
             copiedPoint = Point3D(node.x, node.y, node.z, node.ix, node.iy)
@@ -596,7 +597,6 @@ function solidify(inputMesh, offset=100)
             end
 
             nodeList[count] = copiedPoint
-            nodeArrayTop[x, y] = copiedPoint
             count += 1
         end
     end
@@ -604,37 +604,16 @@ function solidify(inputMesh, offset=100)
     println("We now have $(count - 1) valid nodes")
 
     triangles = Vector{Triangle}(undef, totalTriangles)
-    # Build the triangles for the bottom surface
     count = 1
-    for y = 1:(height - 1)
-        for x = 1:(width - 1)
-          # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x
-            index_ur = index_ul + 1
-
-            index_ll = y * width + x
-            index_lr = index_ll + 1
-
-            triangles[count] = Triangle(index_ul, index_ll, index_ur)
-            count += 1
-            triangles[count] = Triangle(index_lr, index_ur, index_ll)
-            count += 1
-        end
-    end
-
-    println("We've filled up $(count - 1) triangles")
-    if count != numTrianglesBottom + 1
-        println("Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom + 1)")
-        end
 
     # Build the triangles for the top surface
-    for y = 1:(height - 1)
+    for y = 1:(depth - 1)
         for x = 1:(width - 1)
           # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x + totalNodes / 2
+            index_ul = (y - 1) * width + x + (width*depth)
             index_ur = index_ul + 1
 
-            index_ll = y * width + x + totalNodes / 2
+            index_ll = y * width + x + (width*depth)
             index_lr = index_ll + 1
 
             triangles[count] = Triangle(index_ul, index_ur, index_ll)
@@ -644,58 +623,48 @@ function solidify(inputMesh, offset=100)
         end
     end
 
-    println("We've filled up $(count - 1) triangles")
-
-    # Build the triangles to close the mesh
-    x = 1
-    for y = 1:(height - 1)
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = y * width + x
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ul, ur)
-        count += 1
-    triangles[count] = Triangle(ur, lr, ll)
-        count += 1
+    println("We've filled up $(count - 1) top triangles")
+    
+    # Build the Side triangles to close the mesh
+    for x = [1, width]
+        for y = 1:(depth - 1)
+            ll = (y - 1) * width + x
+            ul = ll + (width * depth)
+            lr = y * width + x
+            ur = lr + (width * depth)
+            triangles[count] = Triangle(ll, ul, ur)
+            count += 1
+            triangles[count] = Triangle(ur, lr, ll)
+            count += 1
+            triangles[count] = Triangle(lr, ll, centerpoint_idx)
+            count += 1
+        end
     end
 
-    x = width
-    for y = 1:(height - 1)
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = y * width + x
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ur, ul)
-        count += 1
-        triangles[count] = Triangle(ur, ll, lr)
-        count += 1
+    for y = [1, depth]
+        for x = 2:width
+            ll = (y - 1) * width + x
+            ul = ll + (width * depth)
+            lr = (y - 1) * width + (x - 1)
+            ur = lr + (width * depth)
+            triangles[count] = Triangle(ll, ul, ur)
+            count += 1
+            triangles[count] = Triangle(ur, lr, ll)
+            count += 1
+            triangles[count] = Triangle(lr, ll, centerpoint_idx)
+            count += 1
+        end
     end
+    
+    println("We've filled up $(count - 1) triangles, including bottom")
 
-    y = 1
-    for x = 2:width
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ul, ur)
-        count += 1
-        triangles[count] = Triangle(ur, lr, ll)
-        count += 1
+    if count-1 != totalTriangles
+        println("Hmm aren't count and triangles bottom equal? $(count-1) vs $(totalTriangles)")
     end
-
-    y = height
-    for x = 2:width
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ur, ul)
-        count += 1
-        triangles[count] = Triangle(ur, ll, lr)
-        count += 1
-    end
-
-Mesh(nodeList, nodeArrayBottom, triangles, width, height)
+    
+    # Array not actually used by calling functions here
+    sumArray = Matrix{Point3D}(undef, width, depth)
+    Mesh(nodeList, sumArray, triangles, width, depth)
 end
 
 
@@ -760,7 +729,7 @@ function findSurface(mesh, image, f, imgWidth)
         if i % 500 == 0
             println(max_update)
         end
-        if max_update < 0.00001
+        if max_update < target_convergence
             println("Convergence reached at step $(i) with max_update of $(max_update)")
             break
         end
@@ -898,7 +867,7 @@ end
 """
 $(SIGNATURES)
 """
-function engineer_caustics(img)
+function engineer_caustics(img, output_file_name="./examples/original_image.obj")
     img = Gray.(img)
     img2 = permutedims(img) * 1.0
     width, height = size(img2)
@@ -911,16 +880,22 @@ function engineer_caustics(img)
     image_sum = sum(img2)
     boost_ratio = mesh_sum / image_sum
 
-    # img3 is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
-    # original image.
+    # img3 is normalised to the same (sort of) _energy_ as the original image.
     img3 = img2 .* boost_ratio
 
-    oneIteration(meshy, img3, "it1")
-    oneIteration(meshy, img3, "it2")
-    oneIteration(meshy, img3, "it3")
-    oneIteration(meshy, img3, "it4")
-    # oneIteration(meshy, img3, "it5")
-    # oneIteration(meshy, img3, "it6")
+    last_min_t = Inf
+    for iteration = 1:50
+        println("Iteration $(iteration)")
+        current_min_t= oneIteration(meshy, img3, "it_$(iteration)")
+        if current_min_t <= 0.1
+            break
+        end
+        if last_min_t / current_min_t < 1.01
+            # improvement only 1 Percent 
+            break
+        end
+        last_min_t = current_min_t
+    end
 
     artifactSize = 0.1  # meters
     focalLength = 0.2 # meters
@@ -931,9 +906,9 @@ function engineer_caustics(img)
     solidMesh = solidify(meshy)
     saveObj!(
         solidMesh,
-        "./examples/original_image.obj",
-        scale=1 / 512 * artifactSize,
-        scalez=1 / 512.0 * artifactSize,
+        output_file_name,
+        scale=1000 / width * artifactSize,
+        scalez=1000 / height * artifactSize,
     )
 
     return meshy, img3
@@ -947,7 +922,7 @@ function main()
     @assert size(ARGS) == (1,) "Intented usage is: julia create_mesh.jl image.png"
 
     img = load(ARGS[1])
-    return engineer_caustics(img)
+    return engineer_caustics(img, string(ARGS[1][1:end-3], "obj"))
 end
 
 
