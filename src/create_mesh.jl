@@ -1,5 +1,6 @@
 # Currently unused.
 const grid_definition = 512
+const output_file = "./data/output.obj"
 
 
 """
@@ -931,7 +932,7 @@ function engineer_caustics(img)
     solidMesh = solidify(meshy)
     saveObj!(
         solidMesh,
-        "./examples/original_image.obj",
+        output_file,
         scale=1 / 512 * artifactSize,
         scalez=1 / 512.0 * artifactSize,
     )
