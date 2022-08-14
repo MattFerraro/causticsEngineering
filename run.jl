@@ -3,5 +3,7 @@ Pkg.activate(".")
 
 using Images, CausticsEngineering
 
-image = Images.load("./examples/cat_posing.jpg") # Check current working directory with pwd()
+const input_file = "./data/input.jpg"
+
+image = Images.load(input_file) # Check current working directory with pwd()
 engineer_caustics(image);
