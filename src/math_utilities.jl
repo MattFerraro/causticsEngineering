@@ -67,10 +67,10 @@ function laplacian(ϕ::AbstractMatrix{Float64})
 
     # Convolution = up + down + left + right
     ∇²ϕ =
-        padded_ϕ[begin+1-1:end-1-1, begin+1:end-1] +
-        padded_ϕ[begin+1+1:end-1+1, begin+1:end-1] +
-        padded_ϕ[begin+1:end-1, begin+1-1:end-1-1] +
-        padded_ϕ[begin+1:end-1, begin+1+1:end-1+1] -
+        padded_ϕ[begin+1-1:end-1-1, begin+1+0:end-1+0] +
+        padded_ϕ[begin+1+1:end-1+1, begin+1+0:end-1+0] +
+        padded_ϕ[begin+1+0:end-1+0, begin+1-1:end-1-1] +
+        padded_ϕ[begin+1+0:end-1+0, begin+1+1:end-1+1] -
         4.0 * padded_ϕ[begin+1:end-1, begin+1:end-1]
 
     return ∇²ϕ[1:end-1, 1:end-1]

@@ -23,7 +23,7 @@ $(SIGNATURES)
 function dist(p1::Tuple{Float64,Float64,Float64}, p2::Tuple{Float64,Float64,Float64})
     dr = p2[1] - p1[1]
     dc = p2[2] - p1[2]
-    return sqrt(dr^2 + dc^2)
+    return √(dr^2 + dc^2)
 end
 
 """
@@ -32,7 +32,7 @@ $(SIGNATURES)
 function dist(p1::Vertex3D, p2::Vertex3D)
     dr = p2.r - p1.r
     dc = p2.c - p1.c
-    return sqrt(dr^2 + dc^2)
+    return √(dr^2 + dc^2)
 end
 
 
@@ -47,7 +47,7 @@ function area(v1::Vertex3D, v2::Vertex3D, v3::Vertex3D)
 
     # surface_sq = (a + b + c) * (- a + b + c) * (a - b + c) * (a + b - c) / 16.0
     surface_sq = s * (s - a) * (s - b) * (s - c)
-    return surface_sq <= 1e-100 ? 0.0 : sqrt(surface_sq)
+    return surface_sq <= 1e-100 ? 0.0 : √(surface_sq)
 end
 
 
