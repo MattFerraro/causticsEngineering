@@ -1,957 +1,356 @@
-# Currently unused.
-const grid_definition = 512
-
 
 """
 $(SIGNATURES)
 
-This func returns a square mesh, centered on zero, with (width * height) nodes
 """
-function squareMesh(width::Int, height::Int)
-    nodeList = Vector{Point3D}(undef, height * width)
-    nodeArray = Matrix{Point3D}(undef, width, height)
-    count = 1
-    midpoint = width / 2
-    for y in 1:height, x in 1:width
-        newPoint = Point3D(x, y, 0, x, y)
-        nodeList[count] = newPoint
-        nodeArray[x, y] = newPoint
-        count += 1
-    end
-
-    triangles = Vector{Triangle}(undef, (width - 1) * (height - 1) * 2)
-    count = 1
-    for y = 1:(height - 1)
-        for x = 1:(width - 1)
-            # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x
-            index_ur = index_ul + 1
-
-            index_ll = y * width + x
-            index_lr = index_ll + 1
-
-            triangles[count] = Triangle(index_ul, index_ll, index_ur)
-            count += 1
-            triangles[count] = Triangle(index_lr, index_ur, index_ll)
-            count += 1
-        end
-    end
-
-    return Mesh(nodeList, nodeArray, triangles, width, height)
-end
+function engineer_caustics(source_image)
+    imageBW = Float64.(Gray.(source_image))
 
 
-"""
-$(SIGNATURES)
+    # Set global size parameters
+    height, width = size(imageBW)
+    global N_Pixel_Height = height
+    global N_Pixel_Width = width
+    global Meters_Per_Pixel = Caustics_Long_Side / N_Pixel_Height
+    println("Image size: $(N_Pixel_Height) x $(N_Pixel_Width)")
 
-Warning: not guaranteed to work in 3D?
-"""
-function centroid(mesh::Mesh, index::Int)
-    triangle = mesh.triangles[index]
-    p1 = mesh.nodes[triangle.pt1]
-    p2 = mesh.nodes[triangle.pt2]
-    p3 = mesh.nodes[triangle.pt3]
+    # mesh is the same size as the image with an extra row/column to have coordinates to
+    # cover each image corner with a triangle.
+    mesh = FaceMesh(N_Pixel_Height, N_Pixel_Width)
 
-    return centroid(p1, p2, p3)
-end
+    # Create a pre-allocated solver
+    solve_velocity_potential! = solver_potential!(mesh)
 
+    # imageBW is normalised to have 1 unit per pixel on average.
+    imageBW /= average(imageBW)
 
-"""
-$(SIGNATURES)
+    marginal_change = nothing
+    max_update = Inf
+    counter = 0
+    while (abs(max_update) > 1e-6 && counter < 4)
+        counter += 1
 
-Given 3 points and 3 velocities, calculate the `t` required to bring the area of that triangle to zero
-"""
-function findT(
-    p1::Point3D,
-    p2::Point3D,
-    p3::Point3D,
-    dp1::Point3D,
-    dp2::Point3D,
-    dp3::Point3D,
-)
-    x1 = p2.x - p1.x
-    y1 = p2.y - p1.y
+        print(
+            """
+            ================================================================================================================
+            STARTING ITERATION $(counter):
+                starting ϕ field = $(field_summary(mesh.corners.ϕ))
 
-    x2 = p3.x - p1.x
-    y2 = p3.y - p1.y
-
-    u1 = dp2.x - dp1.x
-    v1 = dp2.y - dp1.y
-
-    u2 = dp3.x - dp1.x
-    v2 = dp3.y - dp1.y
-
-    a = u1 * v2 - u2 * v1
-    b = x1 * v1 + y2 * u1 - x2 * v1 - y1 * u2
-    c = x1 * y2 - x2 * y1
-
-    if a != 0
-        quotient = b^2 - 4a * c
-        if quotient >= 0
-            d = sqrt(quotient)
-            return (-b - d) / 2a, (-b + d) / 2a
-        else
-            return -123.0, -123.0
-        end
-    else
-
-        # cool, there just isn't any dependence on t^2, but there is still on t!
-        return -c / b, -c / b
-    end
-end
-
-
-"""
-$(SIGNATURES)
-
-This function saves the mesh object in obj format.
-"""
-function saveObj!(mesh::Mesh, filename::String; scale=1.0, scalez=1.0, reverse=false, flipxy=false)
-    # This function saves the mesh object in stl format
-    open(filename, "w") do io
-        for vertex in mesh.nodes
-            if flipxy
-                println(io, "v ", vertex.y * scale, " ", vertex.x * scale, " ", vertex.z * scalez)
-            else
-                println(io, "v ", vertex.x * scale, " ", vertex.y * scale, " ", vertex.z * scalez)
-            end
-        end
-  
-        for face in mesh.triangles
-            if reverse
-                println(io, "f ", face.pt3, " ", face.pt2, " ", face.pt1)
-            else
-                println(io, "f ", face.pt1, " ", face.pt2, " ", face.pt3)
-            end
-        end
-  
-        println(io, "dims ", mesh.width, " ", mesh.height)
-    end
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function Obj2Mesh(filename)
-    lines = readlines(filename)
-
-    vertexLines = [l for l in lines if startswith(l, "v")]
-    nodeList = Vector{Point3D}(undef, size(vertexLines))
-    count = 1
-
-    for line in vertexLines
-        elements = split(line, " ")
-        x = parse(Float64, elements[2])
-        y = parse(Float64, elements[3])
-        z = parse(Float64, elements[4]) * 10
-        pt = Point3D(x, y, z, 0, 0)
-        nodeList[count] = pt
-        count += 1
-    end
-
-    faceLines = [l for l in lines if startswith(l, "f")]
-    triangles = Vector{Triangle}(undef, size(faceLines))
-    for line in faceLines
-        elements = split(line, " ")
-        triangle = Triangle(
-            parse(Int64, elements[2]),
-            parse(Int64, elements[3]),
-            parse(Int64, elements[4]),
+            """,
         )
+
+        ε, max_update = solve_velocity_potential!(imageBW, "it$(counter)")
+
+        print(
+            """
+
+            RESULT AT ITERATION $(counter):
+                Luminosity error = $(field_summary(ε))
+                Vertical move max update = $(max_update)
+
+                $(field_summary(mesh.corners.vr, "∇u"))
+                $(field_summary(mesh.corners.vc, "∇v"))
+                $(field_summary(mesh.corners.r - mesh.corners.rows_numbers, "total mesh changes on row"))
+                $(field_summary(mesh.corners.c - mesh.corners.cols_numbers, "total mesh changes on col"))
+
+                end ϕ field = $(field_summary(mesh.corners.ϕ))
+            ================================================================================================================
+
+          """,
+        )
+        plot_as_quiver(mesh, n_steps = 50, scale = height / 10, max_length = height / 20)
     end
 
-    dimsLines = [l for l in lines if startswith(l, "dims")]
-    elements = split(dimsLines[1], " ")
+    println("\nSTARTING HORIZONTAL ITERATION ---")
 
-    return Mesh(nodeList, triangles, parse(Int64, elements[2]), parse(Int64, elements[3]))
+    max_update = solve_height_potential(mesh, imageBW; f = Focal_Length)
+    println("\t Horizontal max update = $(max_update)")
+
+    # Move the around a nil average.
+    mesh.corners.ϕ .-= average(mesh.corners.ϕ)
+
+    return mesh, imageBW
 end
+
 
 
 """
 $(SIGNATURES)
+
+ϕ is the _velocity potential_. The velocity represents the direction towards which the mesh vertices should move.
+Zones of high luminosity should be covered with more triangles and should attract more vertices.
 """
-function ∇(f::Matrix{Float64})
-    width, height = size(f)
+function solver_potential!(mesh)
 
-    ∇fᵤ = zeros(Float64, width, height)   # the right edge will be filled with zeros
-    ∇fᵥ = zeros(Float64, width, height)   # the buttom edge will be filled with zeros
+    # Start with a new clean field
+    (height, width) = size(mesh)
+    ε = zeros(Float64, height + 1, width + 1)
+    lens_pixels_area = zeros(Float64, height, width)
 
-    for x in 1:width, y in 1:height
-        ∇fᵤ[x, y] = (x == width ? 0 : f[x + 1, y] - f[x, y])
-        ∇fᵥ[x, y] = (y == height ? 0 : f[x, y + 1] - f[x, y])
-    end
+    # Preallocate the Poisson solver
+    propagate_poisson! = poisson_propagator!(height + 1, width + 1)
 
-    return ∇fᵤ, ∇fᵥ
-end
+    return (image, prefix) -> begin
 
+        # Reset at each call
+        fill!(ε, 0.0)
+        fill!(lens_pixels_area, 0.0)
 
-"""
-$(SIGNATURES)
-"""
-function getPixelArea(mesh::Mesh)
-    # A Mesh is a grid of 3D points. The X and Y coordinates are not necessarily aligned or square
-    # The Z coordinate represents the value. brightness is just proportional to area.
-    # pixelAreas = Matrix{Float64}(undef, mesh.width - 1, mesh.height - 1)
-    pixelAreas = zeros(mesh.width - 1, mesh.height - 1)
+        # Get the area of each individual pixel as stretch/shrunk on the lens. Area = energy.
+        # _FENCES_SIZED_
+        # Illumination only depends on the position of the corners, not their heights. ϕ is not relevant.
+        lens_pixels_area .= get_lens_pixels_area(mesh)
 
-    for x in 1:mesh.width - 1, y in 1:mesh.height - 1
-        upperLeft = mesh.nodeArray[x, y]
-        upperRight = mesh.nodeArray[x + 1, y]
+        # Positive error => the triangle needs to shrink (less light). Enforce nil average error.
+        ε[1:end-1, 1:end-1] = Float64.(lens_pixels_area - image)
+        ε .-= average(ε)
 
-        lowerLeft = mesh.nodeArray[x, y + 1]
-        lowerRight = mesh.nodeArray[x + 1, y + 1]
+        println("""
+                solve_velocity_potential! before loop:
+                    $(field_summary(lens_pixels_area, "Pixel area"))
+                    $(field_summary(ε, "luminosity error"))
+                    """)
 
-        #= 
-        *------*
-        |    / |
-        |   /  |
-        |  /   |
-        | /    |
-        *------* =#
-        pixelAreas[x, y] =
-            triangle_area(lowerLeft, upperRight, upperLeft) +
-            triangle_area(lowerLeft, lowerRight, upperRight)
-    end
+        # Save the loss image as a png.
+        save_plot_scalar_field!(ε, "error_$(prefix)")
 
-    return pixelAreas
-end
+        # Save the generated image as a png.
+        luminosity_ratio = sum(image) / sum(lens_pixels_area)
+        save(
+            "./examples/img_$(prefix).png",
+            Gray.(clamp.(lens_pixels_area * luminosity_ratio, 0.0, 1.0)),
+        )
 
+        # Start with a clean, flat potential field.
+        mesh.corners.ϕ = zeros(Float64, height + 1, width + 1)
+        count = 0
+        max_update = Inf
+        ∇²ϕ_est = δ = nothing
+        while (1e-6 < max_update && count < 10_000)
+            count += 1
+            max_update, ∇²ϕ_est, δ = propagate_poisson!(mesh.corners.ϕ, ε)
 
-"""
-$(SIGNATURES)
-"""
-function relax!(matrix::Matrix{Float64}, D::Matrix{Float64})
-    # This function implements successive over relaxation for a matrix and its associated error matrix
-    # There is a hardcoded assumption of Neumann boundary conditions--that the derivative across the
-    # boundary must be zero in all cases. See:
-    # https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
-    # sz = size(matrix)
-    # width = sz[1]
-    # height = sz[2]
-    width, height = size(matrix)
-    # ω = 2 / (1 + π / width)
-    ω = 1.99
-    # println("OMEGA $(ω)")
-    max_update = 0
-    for y = 1:height
-        for x = 1:width
-            val = matrix[x, y]
-
-            if x == 1 && y == 1
-                # Top left corner
-                val_down = matrix[x, y + 1]
-                val_right = matrix[x + 1, y]
-                delta = ω / 2 * (val_down + val_right - 2 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            elseif x == 1 && y == height
-                # Bottom left corner
-                val_up = matrix[x, y - 1]
-                val_right = matrix[x + 1, y]
-                delta = ω / 2 * (val_up + val_right - 2 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            elseif x == width && y == 1
-                # Top right corner
-                val_down = matrix[x, y + 1]
-                val_left = matrix[x - 1, y]
-                delta = ω / 2 * (val_down + val_left - 2 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            elseif x == width && y == height
-                # Bottom right corner
-                val_up = matrix[x, y - 1]
-                val_left = matrix[x - 1, y]
-                delta = ω / 2 * (val_up + val_left - 2 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-
-            elseif x == 1
-                # Along the left edge, but not the top or buttom corner
-                val_up = matrix[x, y - 1]
-                val_down = matrix[x, y + 1]
-                val_right = matrix[x + 1, y]
-                delta = ω / 3 * (val_up + val_down + val_right - 3 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            elseif x == width
-                # Along the right edge, but not the top or buttom corner
-                val_up = matrix[x, y - 1]
-                val_down = matrix[x, y + 1]
-                val_left = matrix[x - 1, y]
-                delta = ω / 3 * (val_up + val_down + val_left - 3 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            elseif y == 1
-                # Along the top edge, but not the left or right corner
-                val_down = matrix[x, y + 1]
-                val_left = matrix[x - 1, y]
-                val_right = matrix[x + 1, y]
-                delta = ω / 3 * (val_down + val_left + val_right - 3 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            elseif y == height
-                # Along the bottom edge, but not the left or right corner
-                val_up = matrix[x, y - 1]
-                val_left = matrix[x - 1, y]
-                val_right = matrix[x + 1, y]
-                delta = ω / 3 * (val_up + val_left + val_right - 3 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
-            else
-                # The normal case, in the middle of the mesh!
-                val_up = matrix[x, y - 1]
-                val_down = matrix[x, y + 1]
-                val_left = matrix[x - 1, y]
-                val_right = matrix[x + 1, y]
-
-                # The new way
-                # ∇x₁ =
-
-
-                # The old way
-                delta = ω / 4 * (val_up + val_down + val_left + val_right - 4 * val - D[x, y])
-                if abs(delta) > max_update
-                    max_update = abs(delta)
-                end
-                matrix[x, y] += delta
+            # Save the loss image as a png.
+            if count % 1_000 == 1
+                println("""
+                    Iteration $(count) - max_update = $(round(max_update, sigdigits=4))
+                        $(field_summary(mesh.corners.ϕ, "ϕ"))
+                        $(field_summary(∇²ϕ_est, "∇²ϕ_est"))
+                        $(field_summary(δ, "δ"))
+                        """)
+                save_plot_scalar_field!(∇²ϕ_est, "∇²ϕ_est_$(prefix)")
+                save_plot_scalar_field!(δ, "delta_$(prefix)")
+                save_plot_scalar_field!(mesh.corners.ϕ, "change_mesh.corners.ϕ_$(prefix)")
             end
-            # node.z = .25 * (node_up.z + node_down.z + node_left.z + node_right.z) # simple averaging
-            # node.z += ω/4 * (node_up.z + node_down.z + node_left.z + node_right.z - 4 * node.z)
-
-            # matrix[x, y] += ω/4 * (val_up + val_down + val_left + val_right - 4 * val - D[x, y])
         end
+
+        println(
+            """
+        Finished iteration at count $(count) - max_update = $(round(max_update, sigdigits=4))
+            $(field_summary(mesh.corners.ϕ, "ϕ"))
+            $(field_summary(∇²ϕ_est, "∇²ϕ_est"))
+            $(field_summary(δ, "δ"))
+            """,
+        )
+
+        # Now we need to march the mesh row,col corner locations according to this gradient.
+        δ = march_mesh!(mesh)
+        return ε, max_update
     end
-
-    max_update
-
-    # for y = 1:height
-    #     for x = 1:width
-    #         val = matrix[x, y]
-    #     end
-    # end
 end
 
 
 """
 $(SIGNATURES)
 
-This function will take a `grid_definition x grid_definition` matrix and returns a `grid_definition x grid_definition` mesh.
+ϕ is the height map.
 
-It currently takes the size of the matrix passed as argument.
+`march_mesh!` flexes the mesh
 """
-function matrix_to_mesh(matrix::Matrix{Float64})
-    w, h = size(matrix)
+function march_mesh!(mesh::FaceMesh)
 
-    retval = squareMesh(w, h)
-    for x in 1:w, y in 1:h
-        index = (y - 1) * retval.width + x
-        node = retval.nodes[index]
-        node.z = matrix[x, y]
-    end
+    # Calculate the gradient of the velocity potential and reverse its direction.
+    mesh.corners.vr, mesh.corners.vc = ∇(mesh.corners.ϕ)
+    mesh.corners.vr .*= -1.0
+    mesh.corners.vc .*= -1.0
 
-    return retval
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function marchMesh!(mesh::Mesh, ϕ::Matrix{Float64})
-    ∇ϕᵤ, ∇ϕᵥ = ∇(ϕ)
-
-    imgWidth, imgHeight = size(ϕ)   # should be grid_definitionxgrid_definition
+    # Clean up the mesh borders
+    reset_border_values!(mesh.corners)
 
     # For each point in the mesh we need to figure out its velocity
-    velocities = Matrix{Point3D}(undef, mesh.width, mesh.height)
-    for x in 1:mesh.width, y in 1:mesh.height
-        # XY coordinates in the mesh ARE XY coordinates in the image. The mesh just needs an extra row and column
-        # at the bottom right edge so that the triangles can be closed
-
-        if x == mesh.width
-            u = 0
-        else
-            u = (y == mesh.height ? ∇ϕᵤ[x, y - 1] : ∇ϕᵤ[x, y])
-        end
-
-        if y == mesh.height
-            v = 0
-        else
-            v = (x == mesh.width ? ∇ϕᵥ[x - 1, y] : ∇ϕᵥ[x, y])
-        end
-
-        velocities[x, y] = Point3D(-u, -v, 0, 0, 0)
-    end
-
-    min_t = 10000
-    triangleCount = 1
-    for triangle in mesh.triangles
-        p1 = mesh.nodes[triangle.pt1]
-        p2 = mesh.nodes[triangle.pt2]
-        p3 = mesh.nodes[triangle.pt3]
-
-        v1 = velocities[p1.ix, p1.iy]
-        v2 = velocities[p2.ix, p2.iy]
-        v3 = velocities[p3.ix, p3.iy]
-
-        t1, t2 = findT(p1, p2, p3, v1, v2, v3)
-
-        if 0 < t1 < min_t
-            min_t = t1
-        end
-
-        if 0 < t2 < min_t
-            min_t = t2
-        end
-        triangleCount += 1
-    end
-
-    println("Overall min_t:", min_t)
-    δ = min_t / 2
-
-    for point in mesh.nodes
-        v = velocities[point.ix, point.iy]
-        point.x = v.x * δ + point.x
-        point.y = v.y * δ + point.y
-    end
-
-    # saveObj(mesh, "gateau.obj")
-end
-
-
-    """
-$(SIGNATURES)
-"""
-function quantifyLoss!(D, suffix, img)
-    println("Loss:")
-    println("Minimum: $(minimum(D))")
-    println("Maximum: $(maximum(D))")
-    println("SUM: $(sum(D))")
-
-    blue = zeros(size(D))
-    blue[D .> 0] = D[D .> 0]
-    red = zeros(size(D))
-    red[D .< 0] = -D[D .< 0]
-    green = zeros(size(D))
-
-    println(size(blue))
-    println(size(red))
-    println(size(green))
-
-    rgbImg = RGB.(red, green, blue)'
-    save("./examples/loss_$(suffix).png", map(clamp01nan, rgbImg))
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function oneIteration(meshy, img, suffix)
-    # Remember meshy is (will be) `grid_definition x grid_definition` just like the image
-    # `grid_definition x grid_definition`, so LJ is `grid_definition x grid_definition`.
-    LJ = getPixelArea(meshy)
-    D = Float64.(LJ - img)
-    # Shift D to ensure its sum is zero
-    D .-= sum(D) / (512 * 512)
-
-    # Save the loss image as a png
-    println(minimum(D))
-    println(maximum(D))
-    quantifyLoss!(D, suffix, img)
-
-    # These lines are just for plotting the quiver of L, which I needed for the blog post
-    # ∇Lᵤ, ∇Lᵥ = ∇(D)
-    # plotVAsQuiver(∇Lᵤ, ∇Lᵥ, stride=10, scale=10, max_length=200)
-    # println("okay")
-    # return
-
-    width, height = size(img)
-
-    ϕ = zeros(width, height)
-
-    println("Building Phi")
-    for i = 1:10000
-        max_update = relax!(ϕ, D)
-        
-        if isnan(max_update)
-            println("MAX UPDATE WAS NaN. CANNOT BUILD PHI")
-            return
-        end
-        
-        if i % 500 == 0
-            println(max_update)
-        end
-
-        if max_update < 0.00001
-            println("Convergence reached at step $(i) with max_update of $(max_update)")
-            break
-        end
-    end
-
-    # saveObj!(
-    #     matrix_to_mesh(ϕ * 0.02),
-    #     "./examples/phi_$(suffix).obj",
-    #     reverse=false,
-    #     flipxy=true,
-    # )
-    # plotAsQuiver(ϕ * -1.0, stride=30, scale=1.0, max_length=200, flipxy=true, reversex=false, reversey=false)
-    # saveObj(matrix_to_mesh(D * 10), "D_$(suffix).obj")
-
-    # Now we need to march the x,y locations in our mesh according to this gradient!
-    marchMesh!(meshy, ϕ)
-# saveObj!(meshy, "./examples/mesh_$(suffix).obj", flipxy=true)
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function setHeights!(mesh, heights, heightScale=1.0, heightOffset=10)
-    width, height = size(heights)
-    for y = 1:height
-        for x = 1:width
-            mesh.nodeArray[x, y].z = heights[x, y] * heightScale + heightOffset
-            if x == 100 && y == 100
-                println("Example heights: $(heights[x, y])  and  $(heights[x, y] * heightScale) and $(heights[x, y] * heightScale + heightOffset)")
-            end
-        end
-    end
-
-    # get the side edge
-    for y = 1:height
-        mesh.nodeArray[width + 1, y].z = mesh.nodeArray[width, y].z
-    end
-
-    # get the bottom edge
-    for x = 1:width + 1
-        mesh.nodeArray[x, height + 1].z = mesh.nodeArray[x, height].z
-    end
-
-
-    # # get the pesky corner!
-# mesh.nodeArray[width + 1, height + 1].z = mesh.nodeArray[width, height].z
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function solidify(inputMesh, offset=100)
-    width = inputMesh.width
-    height = inputMesh.height
-    totalNodes = width * height * 2
-    nodeList = Vector{Point3D}(undef, totalNodes)
-    nodeArrayTop = Matrix{Point3D}(undef, width, height)
-    nodeArrayBottom = Matrix{Point3D}(undef, width, height)
-
-    # imagine a 4x4 image. 4 * 2 + 2 * 2 = 12
-    numEdgeNodes = width * 2 + (height - 2) * 2
-
-    numTrianglesTop = (width - 1) * (height - 1) * 2
-    numTrianglesBottom = numTrianglesTop
-    numTrianglesEdges = numEdgeNodes * 2
-
-    totalTriangles = numTrianglesBottom + numTrianglesTop + numTrianglesEdges
-
-    println("Specs: $(width)  $(height)  $(totalNodes)  $(numEdgeNodes)  $(numTrianglesBottom) $(totalTriangles)")
-
-    # Build the bottom surface
-    count = 1
-    for y = 1:height
-        for x = 1:width
-            newPoint = Point3D(x, y, -offset, x, y)
-            nodeList[count] = newPoint
-            nodeArrayBottom[x, y] = newPoint
-            count += 1
-        end
-    end
-
-    # Copy in the top surface
-    for y = 1:height
-        for x = 1:width
-            node = inputMesh.nodeArray[x, y]
-            copiedPoint = Point3D(node.x, node.y, node.z, node.ix, node.iy)
-            if node.ix != x
-                println("OH NO POINTS NOT MATCHED $(x) vs $(node.ix)")
-            end
-            if node.iy != y
-                println("OH NO POINTS NOT MATCHED $(y) vs $(node.iy)")
-            end
-
-            nodeList[count] = copiedPoint
-            nodeArrayTop[x, y] = copiedPoint
-            count += 1
-        end
-    end
-
-    println("We now have $(count - 1) valid nodes")
-
-    triangles = Vector{Triangle}(undef, totalTriangles)
-    # Build the triangles for the bottom surface
-    count = 1
-    for y = 1:(height - 1)
-        for x = 1:(width - 1)
-          # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x
-            index_ur = index_ul + 1
-
-            index_ll = y * width + x
-            index_lr = index_ll + 1
-
-            triangles[count] = Triangle(index_ul, index_ll, index_ur)
-            count += 1
-            triangles[count] = Triangle(index_lr, index_ur, index_ll)
-            count += 1
-        end
-    end
-
-    println("We've filled up $(count - 1) triangles")
-    if count != numTrianglesBottom + 1
-        println("Hmm aren't count and triangles bottom equal? $(count) vs $(numTrianglesBottom + 1)")
-        end
-
-    # Build the triangles for the top surface
-    for y = 1:(height - 1)
-        for x = 1:(width - 1)
-          # here x and y establish the column of squares we're in
-            index_ul = (y - 1) * width + x + totalNodes / 2
-            index_ur = index_ul + 1
-
-            index_ll = y * width + x + totalNodes / 2
-            index_lr = index_ll + 1
-
-            triangles[count] = Triangle(index_ul, index_ur, index_ll)
-            count += 1
-            triangles[count] = Triangle(index_lr, index_ll, index_ur)
-            count += 1
-        end
-    end
-
-    println("We've filled up $(count - 1) triangles")
-
-    # Build the triangles to close the mesh
-    x = 1
-    for y = 1:(height - 1)
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = y * width + x
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ul, ur)
-        count += 1
-    triangles[count] = Triangle(ur, lr, ll)
-        count += 1
-    end
-
-    x = width
-    for y = 1:(height - 1)
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = y * width + x
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ur, ul)
-        count += 1
-        triangles[count] = Triangle(ur, ll, lr)
-        count += 1
-    end
-
-    y = 1
-    for x = 2:width
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ul, ur)
-        count += 1
-        triangles[count] = Triangle(ur, lr, ll)
-        count += 1
-    end
-
-    y = height
-    for x = 2:width
-        ll = (y - 1) * width + x
-        ul = ll + totalNodes / 2
-        lr = (y - 1) * width + (x - 1)
-        ur = lr + totalNodes / 2
-        triangles[count] = Triangle(ll, ur, ul)
-        count += 1
-        triangles[count] = Triangle(ur, ll, lr)
-        count += 1
-    end
-
-Mesh(nodeList, nodeArrayBottom, triangles, width, height)
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function findSurface(mesh, image, f, imgWidth)
-    width, height = size(image)
-
-    # imgWidth = .1 # m
-    # f = 1.0  # m
-    H = f
-    metersPerPixel = imgWidth / width
-    println(metersPerPixel)
-
-    # η = 1.49
-    n₂ = 1
-    n₁ = 1.49
-    Nx = zeros(width + 1, height + 1)
-    Ny = zeros(width + 1, height + 1)
-
-    for j = 1:height
-        for i = 1:width
-            node = mesh.nodeArray[i, j]
-            dx = (node.ix - node.x) * metersPerPixel
-            dy = (node.iy - node.y) * metersPerPixel
-
-            little_h = node.z * metersPerPixel
-            H_minus_h = H - little_h
-            dz = H_minus_h
-
-
-            # k = η * sqrt(dx * dx + dy * dy + H_minus_h * H_minus_h) - H_minus_h
-            # Nx[i, j] = 1/k * dx
-            # Ny[i, j] = 1/k * dy
-            Ny[i, j] = tan(atan(dy / dz) / (n₁ - 1))
-            Nx[i, j] = tan(atan(dx / dz) / (n₁ - 1))
-
-
-        end
-    end
-
-    divergence = zeros(width, height)
-    # We need to find the divergence of the Vector field described by Nx and Ny
-
-    for j = 1:height
-        for i = 1:width
-            δx = (Nx[i + 1, j] - Nx[i, j])
-            δy = (Ny[i, j + 1] - Ny[i, j])
-            divergence[i, j] = δx + δy
-        end
-    end
-    println("Have all the divergences")
-    println("Divergence sum: $(sum(divergence))")
-    divergence .-= sum(divergence) / (width * height)
-
-    h = zeros(width, height)
-    max_update = 0
-    for i = 1:10000
-        max_update = relax!(h, divergence)
-
-        if i % 500 == 0
-            println(max_update)
-        end
-        if max_update < 0.00001
-            println("Convergence reached at step $(i) with max_update of $(max_update)")
-            break
-        end
-    end
-
-    # println("HEIGHT STATS")
-    # h .-= sum(h) / (width * height)
-    # println(minimum(h))
-    # println(maximum(h))
-    # println(sum(h))
-    # println("-----------")
-
-    # saveObj!(matrix_to_mesh(h * 10), "examples/heightmap.obj")
-    h, metersPerPixel
-end
-    
-"""
-$(SIGNATURES)
-"""
-function testSquareMesh!()
-    mesh = squareMesh(100, 50)
-
-    println(mesh.nodeArray[1, 1])
-    println(mesh.nodes[1])
-
-    mesh.nodeArray[1, 1].x = 8
-    println(mesh.nodeArray[1, 1])
-    println(mesh.nodes[1])
-
-    mesh.nodes[1].y += 12
-println(mesh.nodeArray[1, 1])
-    println(mesh.nodes[1])
-
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function testSolidify!()
-    println("Testing solidification")
-    width = 100
-    height = 100
-    origMesh = squareMesh(width, height)
-
-    for y in 1:height, x in 1:width
-        x2 = (x - width / 2) / width
-        y2 = (y - height / 2) / height
-        value = x2 * x2 + y2 * y2
-        origMesh.nodeArray[x, y].z = 15 - value * 25
-    end
-
-    saveObj!(origMesh, "./examples/testSolidify.obj")
-    solidMesh = solidify(origMesh, 0)
-    saveObj!(solidMesh, "./examples/testSolidify2.obj")
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function plotAsQuiver(
-    g;
-    stride=4,
-    scale=300,
-    max_length=2,
-    flipxy=false,
-    reversey=false,
-    reversex=false,
-)
-    h, w = size(g)
-    xs = Float64[]
-    ys = Float64[]
-    us = Float64[]
-    vs = Float64[]
-
-    for x in 1:stride:w, y in 1:stride:h
-        reversex ? push!(xs, x) : push!(xs, -x)
-        reversey ? push!(ys, -y) : push!(ys, y)
-
-        p1 = g[y, x]
-        u = (g[y, x + 1] - g[y, x]) * scale
-        v = (g[y + 1, x] - g[y, x]) * scale
-
-        u = -u
-
-        reversey && (v = -v)
-        reversex && (u = -u)
-
-        # println(u, v)
-        u >= 0 ? push!(us, min(u, max_length)) : push!(us, max(u, -max_length))
-        v >= 0 ? push!(vs, min(v, max_length)) : push!(vs, max(v, -max_length))
-    end
-
-    q =
-        flipxy ? quiver(ys, xs, quiver=(vs, us), aspect_ratio=:equal) :
-        quiver(xs, ys, quiver=(us, vs), aspect_ratio=:equal)
-
-    display(q)
-    readline()
-end
-
-
-"""
-$(SIGNATURES)
-"""
-function plotVAsQuiver(vx, vy; stride=4, scale=300, max_length=2)
-    h, w = size(vx)
-
-    xs = Float64[]
-    ys = Float64[]
-    us = Float64[]
-    vs = Float64[]
-
-    for x in 1:stride:w, y in 1:stride:h
-        push!(xs, x)
-        push!(ys, h - y)
-
-        u = max(vx[x, y], 0.001)
-        v = max(vy[x, y], 0.001)
-
-        push!(us, u)
-        push!(vs, v)
-        # println(u, ": ", v)
-    end
-
-    # readline()
-    q = quiver(xs, ys, quiver=(us, vs), aspect_ratio=:equal)
-    display(q)
-    readline()
-end
-
-
-
-"""
-$(SIGNATURES)
-"""
-function engineer_caustics(img)
-    img = Gray.(img)
-    img2 = permutedims(img) * 1.0
-    width, height = size(img2)
-
-    # meshy is the same size as the image
-    meshy = squareMesh(width + 1, height + 1)
-
-    # We need to boost the brightness of the image so that its sum and the sum of the area are equal
-    mesh_sum = width * height
-    image_sum = sum(img2)
-    boost_ratio = mesh_sum / image_sum
-
-    # img3 is `grid_definition x grid_definition` and is normalised to the same (sort of) _energy_ as the
-    # original image.
-    img3 = img2 .* boost_ratio
-
-    oneIteration(meshy, img3, "it1")
-    oneIteration(meshy, img3, "it2")
-    oneIteration(meshy, img3, "it3")
-    oneIteration(meshy, img3, "it4")
-    # oneIteration(meshy, img3, "it5")
-    # oneIteration(meshy, img3, "it6")
-
-    artifactSize = 0.1  # meters
-    focalLength = 0.2 # meters
-    h, metersPerPixel = findSurface(meshy, img3, focalLength, artifactSize)
-
-    setHeights!(meshy, h, 1.0, 10)
-
-    solidMesh = solidify(meshy)
-    saveObj!(
-        solidMesh,
-        "./examples/original_image.obj",
-        scale=1 / 512 * artifactSize,
-        scalez=1 / 512.0 * artifactSize,
+    # However all the nodes located at a border will never move
+    # I.e. velocity (Vx, Vy) = (0, 0) and the square of acrylate will remain of the same size.
+    # Get the time, at that velocity, for the area of the triangle to be nil.
+    # We are only interested by positive values to only move in the direction of the (opposite) gradient
+    height, width = size(mesh)
+    list_triangles = vcat(
+        [triangle3D(mesh, row, col, :top) for row ∈ 1:height, col ∈ 1:width],
+        [triangle3D(mesh, row, col, :bottom) for row ∈ 1:height, col ∈ 1:width],
     )
 
-    return meshy, img3
+    list_maximum_t = [t for t ∈ find_maximum_t.(list_triangles) if !isnothing(t) && t > 0.0]
+
+    δ = minimum(list_maximum_t) / 2.0
+    mesh.corners.r .-= δ * mesh.corners.vr
+    mesh.corners.c .-= δ * mesh.corners.vc
+
+    println("""
+
+        March mesh with correction_ratio δ = $(δ)
+            $(field_summary(mesh.corners.vr, "∇u"))
+            $(field_summary(mesh.corners.vc, "∇v"))
+
+            """)
+
+    return δ
 end
+
 
 
 """
 $(SIGNATURES)
 """
-function main()
-    @assert size(ARGS) == (1,) "Intented usage is: julia create_mesh.jl image.png"
+function solve_height_potential(mesh::FaceMesh, image; f = Focal_Length)
+    # height indexes rows, width indexes columns
+    height, width = size(mesh)
 
-    img = load(ARGS[1])
-    return engineer_caustics(img)
+    # Preallocate the Poisson solver
+    propagate_poisson! = poisson_propagator!(height + 1, width + 1)
+
+
+    # Coordinates on the caustics = simple rectangular values in corners.
+    # Coordinates on the lens face comes from corner field.
+    # d_row/d_col are _POSTS-SIZED_
+    d_row = mesh.corners.rows_numbers - mesh.corners.r
+    d_col = mesh.corners.cols_numbers - mesh.corners.c
+
+    # The focal length is in meters. H is in corners.
+    H = f / Meters_Per_Pixel
+
+    # true_H is the real distance beteen the surface of the lens and the projection
+    # H is the initial distance from the surface of the carved face to the projection screen.
+    # H is constant and does not account for the change in heights due to carving.
+    # Note: Higher location means closer to the caustics => negative sign
+    # true_H is _POSTS_SIZED_
+    true_H = zeros(Float64, height + 1, width + 1)
+    true_H = -mesh.corners.ϕ .+ H
+
+    # Normals.
+    # N_row/N_col are _POSTS_SIZED_
+    N_row = zeros(Float64, size(true_H))
+    N_col = zeros(Float64, size(true_H))
+    N_row = tan.(atan.(d_row ./ true_H) / (n₁ - n₂))
+    N_col = tan.(atan.(d_col ./ true_H) / (n₁ - n₂))
+
+    # @. N_row[1:end, 1:end] =
+    #     tan(atan(d_row[1:end, 1:end] / true_H[1:end, 1:end]) / (n₁ - n₂))
+    # @. N_col[1:end, 1:end] =
+    #     tan(atan(d_col[1:end, 1:end] / true_H[1:end, 1:end]) / (n₁ - n₂))
+
+    # We need to find the divergence of the Vector field described by Nx and Ny
+    # div_row/div_col are _FENCES_SIZED_
+    div_row = zeros(Float64, size(true_H))
+    div_col = zeros(Float64, size(true_H))
+    div_row[1:end-1, 1:end-1] = N_row[2:end, 1:end-1] .- N_row[1:end-1, 1:end-1]
+    div_col[1:end-1, 1:end-1] = N_col[1:end-1, 2:end] .- N_col[1:end-1, 1:end-1]
+
+    # Normalised divergence
+    # divergence_direction is _FENCES_SIZED_
+    divergence_direction = div_row + div_col
+    # divergence_direction .-= average(divergence_direction)
+
+    max_update = Inf
+    old_update = Inf
+    for i ∈ 1:1e6
+        old_update = max_update
+        max_update, _, _ = propagate_poisson!(mesh.corners.ϕ, -divergence_direction)
+
+        i % 1_000 == 1 &&
+            println("Convergence horiz. Δ  at counter = $(i) max update = $(max_update)")
+
+        if abs(max_update) <= 1e-6
+            println(
+                "Convergence horiz. Δ stopped at counter = $(i) with max_update of $(max_update)",
+            )
+            break
+        end
+    end
+
+    return max_update
 end
+
+
 
 
 """
 $(SIGNATURES)
+
+This function implements successive over relaxation for a matrix and its associated error matrix
+There is a hardcoded assumption of Neumann boundary conditions -- that the derivative across the
+boundary must be zero in all cases. See:
+https://math.stackexchange.com/questions/3790299/how-to-iteratively-solve-poissons-equation-with-no-boundary-conditions
+
+- ϕ is the potential to be solved subject to the Poisson equation and is the same size as the corners (_POSTS_SIZED_)
+- target is ∇ϕ and is of the size in pixels (_FENCES_SIZED_)
+
+In order of how to think about the flow of the program for the velocity potential,
+    - if δ > 0, the Laplacian is too high at that point (∇²ϕ is too low).
+    - To decrease the Laplacian ∇²ϕ, note that ∇² is a divergence (of a gradient) that represents net flow going outside.
+
+    - Decrease the Laplacian
+    - => decrease a divergence
+    - => decrease flow towards outside
+
+    - The flow is a gradient of the potential ϕ.
+    - => decrease flow towards outside
+    - => either decrease the values of the potential around that point, or increase the value of the potential at that point.
+    - => Increase the value of ϕ at that point means a positive change when δ > 0.
+    - δ > 0 => correction of the SAME sign.
 """
-main()
+function poisson_propagator!(height, width)
+
+    ∇²ϕ_est = zeros(Float64, height, width)
+    δ = zeros(Float64, height, width)
+
+    # Return a closure over preallocaed arrays
+    return (ϕ::Matrix{Float64}, ε::Matrix{Float64}) -> begin
+        ω = 1.99
+
+        # Reset at each call
+        fill!(∇²ϕ_est, 0.0)
+        fill!(δ, 0.0)
+
+        for row = 1:height, col = 1:width
+            val_up = row == 1 ? 0.0 : ϕ[row-1, col]
+            val_down = row == height ? 0.0 : ϕ[row+1, col]
+            val_left = col == 1 ? 0.0 : ϕ[row, col-1]
+            val_right = col == width ? 0.0 : ϕ[row, col+1]
+
+            ∇²ϕ_est[row, col] =
+                val_up + val_down + val_left + val_right - 4 * ϕ[row, col]
+            δ[row, col] = ω / 4.0 * (∇²ϕ_est[row, col] - ε[row, col])
+            ϕ[row, col] += δ[row, col]
+        end
+
+        return maximum(abs.(δ)), ∇²ϕ_est, δ
+
+        # Problem with the in-place updates if using the followng.
+        # # Laplacian
+        # # ∇²ϕ_est represent the estimate of the Laplacian of ϕ (second-order value)
+        # ∇²ϕ_est = laplacian(ϕ)
+
+
+        # # In the case of the velocity potential, δ is the difference between the divergence of the luminosity error
+        # # and the current one for the current field ϕ (divergence of its gradient).
+        # # High luminosity error ∇²ϕ means that the triangles are too bright = too large.
+        # # The Laplacian Lϕ has to converge towards the ∇²ϕ. Difference to calculate speed of the descent.
+
+        # # Correction ratio to avoid setting the triangle to nothing
+        # δ = ω / 4.0 * (∇²ϕ_est - ε)
+
+        # # In the case of the velocity potential, if δ > 0, the Laplacian is too high at that point (∇²ϕ is too low).
+        # ϕ[1:end-1, 1:end-1] .+= δ
+
+        # return ∇²ϕ_est, δ, maximum(abs.(δ))
+    end
+end

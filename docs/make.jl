@@ -1,7 +1,7 @@
 push!(LOAD_PATH, "../src/")
 
 using CausticsEngineering
-using Documenter
+using Documenter, DocStringExtensions
 
 #
 # HTML docs
